@@ -11,6 +11,7 @@ namespace scheduler {
 namespace detail {
     class IClock;
     class ITaskQueue;
+    class IThreadPool;
 }
 
 class Scheduler {
@@ -38,11 +39,13 @@ public:
 
 private:
     // Implementation details
-    // Scheduler(size_t numThreads,
-    //     std::shared_ptr<detail::IClock> clock,
-    //     std::shared_ptr<detail::ITaskQueue> queue);
-    // std::shared_ptr<detail::IClock> clock;
-    std::shared_ptr<detail::ITaskQueue> pq;
+    Scheduler(std::shared_ptr<detail::IClock> clock,
+        std::shared_ptr<detail::ITaskQueue> queue,
+        std::shared_ptr<detail::IThreadPool> thread_pool);
+
+    std::shared_ptr<detail::ITaskQueue> data;
+    std::shared_ptr<detail::IThreadPool> thread_pool;
+    std::shared_ptr<detail::IClock> clock;
 };
 
 }; // namespace Scheduler

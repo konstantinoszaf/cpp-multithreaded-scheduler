@@ -22,9 +22,7 @@ set(TEST_SOURCES
     ${UNIT_TEST_SOURCES}
     ${INT_TEST_SOURCES}
 )
-# set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY
-#     ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tsan.supp"
-# )
+
 foreach(test_src IN LISTS TEST_SOURCES)
   get_filename_component(test_name ${test_src} NAME_WE)
 
@@ -45,8 +43,5 @@ foreach(test_src IN LISTS TEST_SOURCES)
       gmock_main
   )
 
-  gtest_discover_tests(${test_name}
-      DISCOVERY_TIMEOUT 60
-      ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/tsan.supp"
-  )
+  gtest_discover_tests(${test_name})
 endforeach()

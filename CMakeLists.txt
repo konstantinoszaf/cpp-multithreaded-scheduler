@@ -11,13 +11,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(BUILD_TESTS "Build unit and integration tests" ON)
 option(USE_TSAN "Enable ThreadSanitizer for all targets" OFF)
 
-# Only set these flags as a list, not a string
-if(USE_TSAN)
-  message(STATUS "Building EVERYTHING with ThreadSanitizer")
-  add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -fsanitize=undefined)
-  add_link_options(-fsanitize=thread -fno-omit-frame-pointer -fsanitize=undefined)
-endif()
-
 file(GLOB_RECURSE SCHEDULER_SRC
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
 )
