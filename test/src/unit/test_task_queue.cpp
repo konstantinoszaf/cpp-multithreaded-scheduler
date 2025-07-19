@@ -79,6 +79,57 @@ TEST_F(TestTaskQueue, PriorityOrdering)
     EXPECT_EQ(t2->priority, 1);
 }
 
+TEST_F(TestTaskQueue, FirstNoDeadlineOrdering)
+{
+    auto now = std::chrono::steady_clock::now();
+    Task low(
+        [] {}, 3, 1,
+        std::chrono::milliseconds{0}, now, std::nullopt);
+    Task high(
+        [] {}, 1, 2,
+        std::chrono::milliseconds{0}, now, now);
+    task_queue->push(std::move(low));
+    task_queue->push(std::move(high));
+
+    auto t1 = task_queue->pop();
+    ASSERT_TRUE(t1.has_value());
+    EXPECT_EQ(t1->priority, 1);
+
+    auto t2 = task_queue->pop();
+    ASSERT_TRUE(t2.has_value());
+    EXPECT_EQ(t2->priority, 3);
+}
+
+TEST_F(TestTaskQueue, AddMultipleTasksAndCheckOrdering)
+{
+    auto now = std::chrono::steady_clock::now();
+    Task task1([] {}, 3, 1, std::chrono::milliseconds{0}, now, std::nullopt);
+    Task task2([] {}, 91, 2, std::chrono::milliseconds{0}, now, std::nullopt);
+    Task task3([] {}, 89, 3, std::chrono::milliseconds{0}, now, now);
+    Task task4([] {}, 90, 4, std::chrono::milliseconds{0}, now, now + std::chrono::milliseconds{1});
+
+    task_queue->push(std::move(task1));
+    task_queue->push(std::move(task2));
+    task_queue->push(std::move(task3));
+    task_queue->push(std::move(task4));
+
+    auto t1 = task_queue->pop();
+    ASSERT_TRUE(t1.has_value());
+    EXPECT_EQ(t1->priority, 89);
+
+    auto t2 = task_queue->pop();
+    ASSERT_TRUE(t2.has_value());
+    EXPECT_EQ(t2->priority, 90);
+
+    auto t3 = task_queue->pop();
+    ASSERT_TRUE(t3.has_value());
+    EXPECT_EQ(t3->priority, 91);
+
+    auto t4 = task_queue->pop();
+    ASSERT_TRUE(t4.has_value());
+    EXPECT_EQ(t4->priority, 3);
+}
+
 TEST_F(TestTaskQueue, FifoTieBreak)
 {
     auto now = std::chrono::steady_clock::now();
