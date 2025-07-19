@@ -5,6 +5,7 @@
 #include <chrono>
 #include <thread>
 #include <memory>
+#include <atomic>
 
 namespace scheduler {
 
@@ -12,6 +13,7 @@ namespace detail {
     class IClock;
     class ITaskQueue;
     class IThreadPool;
+    class IStatisticsCalculator;
 }
 
 class Scheduler {
@@ -36,16 +38,25 @@ public:
     // Performance metrics
     // Returns average, min, max latency so far
     std::tuple<double, double, double> getLatencyStatistics() const;
+    uint64_t getMissedTasks();
 
 private:
     // Implementation details
     Scheduler(std::shared_ptr<detail::IClock> clock,
         std::shared_ptr<detail::ITaskQueue> queue,
-        std::shared_ptr<detail::IThreadPool> thread_pool);
+        std::shared_ptr<detail::IThreadPool> thread_pool,
+        std::shared_ptr<detail::IStatisticsCalculator> stats);
+    void dispatchLoop();
+    uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
 
+    std::shared_ptr<detail::IClock> clock;
     std::shared_ptr<detail::ITaskQueue> data;
     std::shared_ptr<detail::IThreadPool> thread_pool;
-    std::shared_ptr<detail::IClock> clock;
+    std::shared_ptr<detail::IStatisticsCalculator> statistics;
+    std::atomic<uint64_t> sequence_number{0};
+    std::atomic<bool> dispatching{false};
+    std::atomic<uint64_t> missed_tasks{0};
+    std::chrono::milliseconds deadline_imminence{10};
 };
 
 }; // namespace Scheduler
