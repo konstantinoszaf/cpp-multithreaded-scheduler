@@ -5,17 +5,22 @@
 #include <thread>
 #include <unordered_set>
 #include <atomic>
+#include <optional>
 
 using namespace scheduler::detail;
 
-class TestTaskQueue : public ::testing::Test
-{
+class TestTaskQueue : public ::testing::Test {
 protected:
     std::shared_ptr<TaskQueue> task_queue;
 
     void SetUp() override
     {
-        task_queue = std::make_shared<TaskQueue>();
+        auto priorityComparator = [](const Task& a, const Task& b) noexcept -> bool {
+            if (a.priority != b.priority)
+                return a.priority < b.priority; // higher priority first
+            return a.sequence_number > b.sequence_number; // FIFO for same priority
+        };
+        task_queue = std::make_shared<TaskQueue>(priorityComparator);
     }
 
     void TearDown() override
@@ -29,22 +34,15 @@ protected:
     }
 };
 
-TEST_F(TestTaskQueue, PopOnEmptyReturnsNullopt)
-{
+TEST_F(TestTaskQueue, PopOnEmptyReturnsNullopt) {
     auto t = task_queue->pop();
     EXPECT_FALSE(t.has_value());
 }
 
-TEST_F(TestTaskQueue, PushPopSingleTask)
-{
+TEST_F(TestTaskQueue, PushPopSingleTask) {
     auto now = std::chrono::steady_clock::now();
-    Task foo(
-        [] {}, // task
-        /*priority=*/7,
-        /*seq=*/42,
-        /*interval=*/std::chrono::milliseconds{0},
-        /*enqueue=*/now,
-        /*deadline=*/now);
+    Task foo([]{}, 7, 42, now, std::chrono::milliseconds{0}, now, now);
+
     task_queue->push(std::move(foo));
 
     EXPECT_FALSE(task_queue->empty());
@@ -58,15 +56,11 @@ TEST_F(TestTaskQueue, PushPopSingleTask)
     EXPECT_TRUE(task_queue->empty());
 }
 
-TEST_F(TestTaskQueue, PriorityOrdering)
-{
+TEST_F(TestTaskQueue, PriorityOrdering) {
     auto now = std::chrono::steady_clock::now();
-    Task low(
-        [] {}, 1, 1,
-        std::chrono::milliseconds{0}, now, now);
-    Task high(
-        [] {}, 99, 2,
-        std::chrono::milliseconds{0}, now, now);
+    Task low([]{}, 1, 1, now, std::chrono::milliseconds{0}, now, now);
+    Task high([]{}, 99, 2, now, std::chrono::milliseconds{0},now, now);
+
     task_queue->push(std::move(low));
     task_queue->push(std::move(high));
 
@@ -79,34 +73,29 @@ TEST_F(TestTaskQueue, PriorityOrdering)
     EXPECT_EQ(t2->priority, 1);
 }
 
-TEST_F(TestTaskQueue, FirstNoDeadlineOrdering)
-{
+TEST_F(TestTaskQueue, FirstNoDeadlineOrdering) {
     auto now = std::chrono::steady_clock::now();
-    Task low(
-        [] {}, 3, 1,
-        std::chrono::milliseconds{0}, now, std::nullopt);
-    Task high(
-        [] {}, 1, 2,
-        std::chrono::milliseconds{0}, now, now);
+    Task low([]{}, 3, 1, now, std::chrono::milliseconds{0}, now, std::nullopt);
+    Task high([]{}, 1101, 2, now, std::chrono::milliseconds{0},now, now);
+
     task_queue->push(std::move(low));
     task_queue->push(std::move(high));
 
     auto t1 = task_queue->pop();
     ASSERT_TRUE(t1.has_value());
-    EXPECT_EQ(t1->priority, 1);
+    EXPECT_EQ(t1->priority, 1101);
 
     auto t2 = task_queue->pop();
     ASSERT_TRUE(t2.has_value());
     EXPECT_EQ(t2->priority, 3);
 }
 
-TEST_F(TestTaskQueue, AddMultipleTasksAndCheckOrdering)
-{
+TEST_F(TestTaskQueue, AddMultipleTasksAndCheckOrdering) {
     auto now = std::chrono::steady_clock::now();
-    Task task1([] {}, 3, 1, std::chrono::milliseconds{0}, now, std::nullopt);
-    Task task2([] {}, 91, 2, std::chrono::milliseconds{0}, now, std::nullopt);
-    Task task3([] {}, 89, 3, std::chrono::milliseconds{0}, now, now);
-    Task task4([] {}, 90, 4, std::chrono::milliseconds{0}, now, now + std::chrono::milliseconds{1});
+    Task task1([]{}, 3, 1, now, std::chrono::milliseconds{0},now, std::nullopt);
+    Task task2([]{}, 91, 2, now, std::chrono::milliseconds{0},now, std::nullopt);
+    Task task3([]{}, 1189, 3, now, std::chrono::milliseconds{0},now, now);
+    Task task4([]{}, 1190, 4, now, std::chrono::milliseconds{0},now, now + std::chrono::milliseconds{1});
 
     task_queue->push(std::move(task1));
     task_queue->push(std::move(task2));
@@ -115,11 +104,11 @@ TEST_F(TestTaskQueue, AddMultipleTasksAndCheckOrdering)
 
     auto t1 = task_queue->pop();
     ASSERT_TRUE(t1.has_value());
-    EXPECT_EQ(t1->priority, 89);
+    EXPECT_EQ(t1->priority, 1190);
 
     auto t2 = task_queue->pop();
     ASSERT_TRUE(t2.has_value());
-    EXPECT_EQ(t2->priority, 90);
+    EXPECT_EQ(t2->priority, 1189);
 
     auto t3 = task_queue->pop();
     ASSERT_TRUE(t3.has_value());
@@ -130,15 +119,28 @@ TEST_F(TestTaskQueue, AddMultipleTasksAndCheckOrdering)
     EXPECT_EQ(t4->priority, 3);
 }
 
-TEST_F(TestTaskQueue, FifoTieBreak)
-{
+TEST_F(TestTaskQueue, FifoTieBreak) {
     auto now = std::chrono::steady_clock::now();
     Task first(
-        [] {}, 5, 100,
-        std::chrono::milliseconds{0}, now, now);
+        []{ /*…*/ },   // job
+        5,              // priority
+        100,              // sequence number
+        now,            // scheduled_at
+        std::chrono::milliseconds{0},// interval
+        now,            // enqueue_time
+        std::nullopt    // no deadline
+    );
+
     Task second(
-        [] {}, 5, 101,
-        std::chrono::milliseconds{0}, now, now);
+        []{ /*…*/ },   // job
+        5,              // priority
+        101,              // sequence number
+        now,            // scheduled_at
+        std::chrono::milliseconds{0},// interval
+        now,            // enqueue_time
+        std::nullopt    // no deadline
+    );
+
     task_queue->push(std::move(first));
     task_queue->push(std::move(second));
 
@@ -151,34 +153,38 @@ TEST_F(TestTaskQueue, FifoTieBreak)
     EXPECT_EQ(t2->sequence_number, 101u);
 }
 
-TEST_F(TestTaskQueue, PeekDoesNotPop)
-{
+TEST_F(TestTaskQueue, PeekDoesNotPop) {
     auto now = std::chrono::steady_clock::now();
     Task foo(
-        [] {}, 3, 7,
-        std::chrono::milliseconds{0}, now, now);
+        []{ /*…*/ },   // job
+        3,              // priority
+        7,              // sequence number
+        now,            // scheduled_at
+        std::chrono::milliseconds{0},// interval
+        now,            // enqueue_time
+        std::nullopt    // no deadline
+    );
     task_queue->push(std::move(foo));
 
-    auto p = task_queue->peek();
+    auto p = task_queue->peek_time();
     ASSERT_TRUE(p.has_value());
-    EXPECT_EQ(p->get().sequence_number, 7u);
+    EXPECT_EQ(p->get(), now);
 
     EXPECT_EQ(task_queue->size(), 1u);
 
     auto t = task_queue->pop();
     ASSERT_TRUE(t.has_value());
     EXPECT_EQ(t->sequence_number, 7u);
+    EXPECT_EQ(task_queue->size(), 0u);
 }
 
-TEST_F(TestTaskQueue, SizeReflectsPushesAndPops)
-{
+TEST_F(TestTaskQueue, SizeReflectsPushesAndPops) {
     auto now = std::chrono::steady_clock::now();
     EXPECT_EQ(task_queue->size(), 0u);
     for (int i = 0; i < 5; ++i)
     {
-        Task tmp(
-            [] {}, i, i,
-            std::chrono::milliseconds{0}, now, now);
+        Task tmp([]{}, i, i, now, std::chrono::milliseconds{0},now, now);
+
         task_queue->push(std::move(tmp));
         EXPECT_EQ(task_queue->size(), static_cast<size_t>(i + 1));
     }

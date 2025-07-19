@@ -34,7 +34,7 @@ foreach(test_src IN LISTS TEST_SOURCES)
       ${CMAKE_SOURCE_DIR}/include
       ${CMAKE_CURRENT_SOURCE_DIR}/include
       ${CMAKE_SOURCE_DIR}/src
-      # ${CMAKE_CURRENT_SOURCE_DIR}/mock
+      ${CMAKE_CURRENT_SOURCE_DIR}/mock
   )
 
   target_link_libraries(${test_name}

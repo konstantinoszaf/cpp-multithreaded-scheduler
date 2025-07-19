@@ -6,6 +6,7 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <condition_variable>
 
 namespace scheduler {
 
@@ -14,6 +15,7 @@ namespace detail {
     class ITaskQueue;
     class IThreadPool;
     class IStatisticsCalculator;
+    struct Task;
 }
 
 class Scheduler {
@@ -40,23 +42,34 @@ public:
     std::tuple<double, double, double> getLatencyStatistics() const;
     uint64_t getMissedTasks();
 
-private:
     // Implementation details
+protected:
     Scheduler(std::shared_ptr<detail::IClock> clock,
-        std::shared_ptr<detail::ITaskQueue> queue,
+        std::shared_ptr<detail::ITaskQueue> ready,
+        std::shared_ptr<detail::ITaskQueue> scheduled,
         std::shared_ptr<detail::IThreadPool> thread_pool,
         std::shared_ptr<detail::IStatisticsCalculator> stats);
     void dispatchLoop();
+    void start();
+    void stop();
+
+private:
+    void dispatchOne(detail::Task task);
     uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
 
     std::shared_ptr<detail::IClock> clock;
-    std::shared_ptr<detail::ITaskQueue> data;
+    std::shared_ptr<detail::ITaskQueue> ready;
+    std::shared_ptr<detail::ITaskQueue> scheduled;
     std::shared_ptr<detail::IThreadPool> thread_pool;
     std::shared_ptr<detail::IStatisticsCalculator> statistics;
     std::atomic<uint64_t> sequence_number{0};
     std::atomic<bool> dispatching{false};
     std::atomic<uint64_t> missed_tasks{0};
     std::chrono::milliseconds deadline_imminence{10};
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool running;
+    std::thread thread;
 };
 
 }; // namespace Scheduler

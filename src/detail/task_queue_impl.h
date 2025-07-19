@@ -3,11 +3,15 @@
 #include "task.h"
 #include <vector>
 #include <mutex>
+#include <optional>
+#include <functional>
+#include <chrono>
 
 namespace scheduler::detail {
 class TaskQueue : public ITaskQueue {
 public:
-    TaskQueue() = default;
+    explicit TaskQueue(std::function<bool(const Task&, const Task&)> comparator_)
+        : comparator{std::move(comparator_)} {}
     ~TaskQueue() = default;
     void push(Task&& task) override;
     /**
@@ -15,16 +19,19 @@ public:
     */
     std::optional<Task> pop() override;
     /**
-     * takes a look at the current closest task
-     * @warning peek does not guarantee that the returned head will be the same
+     * takes a look at the top tasks scheduled at attribute
+     * @warning peek_time does not guarantee that the returned head will be the same
      * if pop() is called right after. Using the reference after pop() can lead
      * to undefined behavior
     */
-    std::optional<std::reference_wrapper<const Task>> peek() const override;
+    std::optional<std::reference_wrapper<const std::chrono::steady_clock::time_point>> 
+                                                            peek_time() const override;
+
     bool empty() const override;
     size_t size() const override;
 private:
     std::vector<Task> heap_;
     mutable std::mutex mtx_;
+    std::function<bool(const Task&, const Task&)> comparator;
 };
 }

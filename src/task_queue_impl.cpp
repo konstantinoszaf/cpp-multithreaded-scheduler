@@ -6,7 +6,7 @@ using namespace scheduler::detail;
 void TaskQueue::push(Task&& task) {
     std::lock_guard<std::mutex> guard{mtx_};
     heap_.push_back(std::move(task));
-    std::push_heap(heap_.begin(), heap_.end());
+    std::push_heap(heap_.begin(), heap_.end(), comparator);
 }
 
 std::optional<Task> TaskQueue::pop() {
@@ -16,19 +16,19 @@ std::optional<Task> TaskQueue::pop() {
     }
 
     // move the largest to the back
-    std::pop_heap(heap_.begin(), heap_.end());
+    std::pop_heap(heap_.begin(), heap_.end(), comparator);
     Task task = std::move((heap_.back()));
     heap_.pop_back();
     return task;
 }
 
-std::optional<std::reference_wrapper<const Task>> TaskQueue::peek() const {
+std::optional<std::reference_wrapper<const std::chrono::steady_clock::time_point>> TaskQueue::peek_time() const {
     std::lock_guard<std::mutex> guard{mtx_};
     if (heap_.empty()) {
         return std::nullopt;
     }
 
-    return std::cref(heap_.front());
+    return std::cref(heap_.front().scheduled_at);
 }
 
 bool TaskQueue::empty() const {

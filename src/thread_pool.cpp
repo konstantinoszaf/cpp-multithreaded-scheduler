@@ -44,7 +44,7 @@ bool ThreadPool::submit(std::function<void()> job) {
         if (!running) return false;
         jobs.emplace_back(std::move(job));
     }
-    cv.notify_one();
+    cv.notify_all();
     return true;
 }
 

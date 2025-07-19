@@ -2,66 +2,56 @@
 #include <iostream>
 #include <chrono>
 #include <random>
+#include <thread>
+#include <atomic>
 
 int main() {
-    std::cout << "main thread: " << std::this_thread::get_id() << '\n';
+    using namespace std::chrono_literals;
+
+    scheduler::Scheduler scheduler{4};
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dist(0, 10);
-    double average, minimum, maximum;
-    uint64_t missed;
+    std::uniform_int_distribution<int> priority_dist(1, 10);
 
-    // generate a random number
-    int r = dist(gen);
     auto executions = std::make_shared<std::atomic<uint64_t>>(0);
-    {
-        scheduler::Scheduler scheduler{4};
 
-        auto job = [executions](){ 
-            executions->fetch_add(1);
-            std::cout << executions->load() << ". I am called by thread " << std::this_thread::get_id() << '\n';
-        };
+    auto job = [executions](){
+        // auto count = executions->fetch_add(1);
+        // std::cout << "Periodic Task #" << count << " executed by thread "
+        //           << std::this_thread::get_id() << "\n";
+    };
 
-        scheduler.scheduleRecurring(job, dist(gen), std::chrono::milliseconds{1});
+    // Schedule recurring task
+    scheduler.scheduleRecurring(job, 5, 1ms);
 
-        scheduler.schedule(job, dist(gen));
-        scheduler.schedule(job, dist(gen));
-
-        for (int i = 0; i < 100; ++i) {
-            scheduler.schedule(job, 0, std::chrono::steady_clock::now() + std::chrono::milliseconds{1});
-        }
-
-        for (int i = 0; i < 100; ++i) {
-            int prio = dist(gen);
-            scheduler.schedule(
-                [executions, i]() {
-                    executions->fetch_add(1, std::memory_order_relaxed);
-                    std::cout << "task " << i
-                            << " ran (count="
-                            << executions->load() 
-                            << ") on thread "
-                            << std::this_thread::get_id()
-                            << "\n";
-                },
-                0,
-                std::chrono::steady_clock::now() + std::chrono::milliseconds{1}
-            );
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds{1000});
-        auto [avg, min, max] = scheduler.getLatencyStatistics();
-        missed = scheduler.getMissedTasks();
-        average = avg;
-        minimum = min;
-        maximum = max;
+    // Schedule tasks with varying priorities and explicit deadlines
+    for (int i = 0; i < 10; ++i) {
+        scheduler.schedule(
+            [i](){},
+            priority_dist(gen),
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(10 * i)
+        );
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds{100});
-    std::cout   << "Results: \n"
-                << "Avg: " << (average / 1e6) << " ms\n"
-                << "Min: " << (minimum / 1e6) << " ms\n"
-                << "Max: " << (maximum / 1e6) << " ms\n"
-                << "Missed tasks: " << missed << "\n";
+    // Simulate bursty workload
+    for (int i = 0; i < 1000; ++i) {
+        scheduler.schedule(job, priority_dist(gen),
+            std::chrono::steady_clock::now() + 50ms);
+    }
+
+    // Allow tasks to execute
+    std::this_thread::sleep_for(2s);
+
+    // Retrieve latency statistics and print them
+    auto [average, minimum, maximum] = scheduler.getLatencyStatistics();
+    uint64_t missed = scheduler.getMissedTasks();
+
+    std::cout << "\n=== Scheduler Latency Results ===\n"
+              << "Average Latency: " << average << " ms\n"
+              << "Minimum Latency: " << minimum << " ms\n"
+              << "Maximum Latency: " << maximum << " ms\n"
+              << "Missed tasks: " << missed << '\n';
+
     return 0;
 }
