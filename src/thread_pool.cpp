@@ -15,6 +15,8 @@ void ThreadPool::start() {
         if (running) return;
         running = true;
     }
+
+    if (thread_num <= 0) thread_num = 1;
     threads.reserve(thread_num);
 
     for (size_t i = 0; i < thread_num; ++i) {
@@ -69,5 +71,5 @@ void ThreadPool::workerLoop() {
 }
 
 size_t ThreadPool::threadCount() const noexcept {
-  return thread_num;
+    return thread_num;
 }
