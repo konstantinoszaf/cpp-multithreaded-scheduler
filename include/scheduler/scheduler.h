@@ -52,14 +52,15 @@ protected:
     void dispatchLoop();
     void start();
     void stop();
+    std::atomic<bool> running;
 
 private:
     void dispatchOne(detail::Task task);
     uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
     void promoteTasks();
     std::shared_ptr<detail::IClock> clock;
-    std::shared_ptr<detail::ITaskQueue> ready_tasks;
     std::shared_ptr<detail::ITaskQueue> scheduled_tasks;
+    std::shared_ptr<detail::ITaskQueue> recurring_tasks;
     std::shared_ptr<detail::IThreadPool> thread_pool;
     std::shared_ptr<detail::IStatisticsCalculator> statistics;
     std::atomic<uint64_t> sequence_number{0};
@@ -69,7 +70,6 @@ private:
     std::mutex promoter_mtx;
     std::condition_variable dispatcher_cv;
     std::condition_variable promoter_cv;
-    std::atomic<bool> running;
     std::thread dispatcher_thread;
     std::thread promoter_thread;
 };

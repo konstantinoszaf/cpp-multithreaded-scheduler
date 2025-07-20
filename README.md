@@ -17,9 +17,9 @@ A multi-threaded task scheduler with support for:
 * **Thread Pool**: Fixed-size worker pool (default to hardware concurrency).
 * **Task Queues**:
 
-  * *ready_tasks Queue*: Priority-ordered, FIFO for equal priorities. 
+  * *scheduled_tasks Queue*: Priority-ordered, FIFO for equal priorities. 
  If a task is enqueued with a deadline of 10 ms or less, it is assigned critical priority.
-  * *scheduled_tasks Queue*: Time-ordered for future tasks.
+  * *recurring_tasks Queue*: Time-ordered for future tasks.
 * **Recurring Tasks**: Schedule tasks to run at fixed intervals.
 * **Latency Measurement**: Tracks enqueue-to-execute timing.
 * **Missed-Deadline Counter**: Counts tasks that start after their deadline.

@@ -31,7 +31,7 @@ install:
 build-tests:
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && \
-	    cmake -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug .. && \
+	    cmake -DBUILD_TESTS=ON -DBUILD_EXAMPLE=OFF -DCMAKE_BUILD_TYPE=Debug .. && \
 	    cmake --build . -- -j
 
 run-tests:

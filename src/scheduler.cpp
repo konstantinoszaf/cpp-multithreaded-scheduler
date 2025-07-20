@@ -4,7 +4,6 @@
 #include "detail/thread_pool_impl.h"
 #include "detail/statistics_calculator_impl.h"
 #include "detail/task.h"
-#include <iostream>
 
 using namespace scheduler;
 using namespace detail;
@@ -24,19 +23,19 @@ Scheduler::Scheduler(size_t numThreads) : running{false}
     // the Scheduler interface and aren’t exposed to the internals.
     clock = std::make_shared<SystemClock>();
 
-    // Priority comparator lambda
+    // Create a task queue that sorts tasks based on the priority and sequence number (FIFO)
     auto priorityComparator = [](const Task& a, const Task& b) noexcept -> bool {
         if (a.priority != b.priority)
             return a.priority < b.priority; // higher priority first
         return a.sequence_number > b.sequence_number; // FIFO for same priority
     };
-    ready_tasks = std::make_shared<TaskQueue>(priorityComparator);
+    scheduled_tasks = std::make_shared<TaskQueue>(priorityComparator);
 
-    // Time comparator lambda
+    // Create a task queue that sorts tasks based on the time
     auto timeComparator = [](const Task& a, const Task& b) noexcept -> bool {
-        return a.scheduled_at > b.scheduled_at; // earliest scheduled_tasks first
+        return a.scheduled_at > b.scheduled_at; // earliest recurring_tasks first
     };
-    scheduled_tasks = std::make_shared<TaskQueue>(timeComparator);
+    recurring_tasks = std::make_shared<TaskQueue>(timeComparator);
 
     thread_pool = std::make_shared<ThreadPool>(numThreads);
     statistics = std::make_shared<StatisticsCalculator>();
@@ -51,7 +50,7 @@ Scheduler::Scheduler(std::shared_ptr<detail::IClock> clock_,
                      std::shared_ptr<detail::ITaskQueue> scheduled_,
                      std::shared_ptr<detail::IThreadPool> pool_,
                      std::shared_ptr<detail::IStatisticsCalculator> stats)
-    : clock{clock_}, ready_tasks{ready_}, scheduled_tasks{scheduled_}, thread_pool{pool_}, running{false}
+    : clock{clock_}, scheduled_tasks{ready_}, recurring_tasks{scheduled_}, thread_pool{pool_}, running{false}
 {}
 
 Scheduler::~Scheduler()
@@ -105,7 +104,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
         deadline, //deadline
     };
 
-    ready_tasks->push(std::move(task));
+    scheduled_tasks->push(std::move(task));
     dispatcher_cv.notify_one();
 }
 
@@ -128,23 +127,23 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
         std::nullopt, //deadline
     };
 
-    ready_tasks->push(std::move(task));
+    scheduled_tasks->push(std::move(task));
     dispatcher_cv.notify_one();
 }
 
 void Scheduler::promoteTasks() {
     while (true) {
         std::unique_lock<std::mutex> lock{promoter_mtx};
-        if (!running.load(std::memory_order_acquire) && scheduled_tasks->empty()) break;
+        if (!running.load(std::memory_order_acquire) && recurring_tasks->empty()) break;
 
         // sleep until there is something in the queue, or until the next periodic
         // task should be triggered
-        if (scheduled_tasks->empty()) {
-            promoter_cv.wait(lock, [&]{ return !running || !scheduled_tasks->empty(); });
+        if (recurring_tasks->empty()) {
+            promoter_cv.wait(lock, [&]{ return !running || !recurring_tasks->empty(); });
         } else {
-            auto next_time = scheduled_tasks->peek_time();
+            auto next_time = recurring_tasks->peek_time();
             if (!next_time.has_value()) {
-                scheduled_tasks->pop();
+                recurring_tasks->pop();
                 continue;
             }
 
@@ -157,11 +156,11 @@ void Scheduler::promoteTasks() {
         auto now = clock->now();
         // promote the tasks to ready in batches
         bool inform_dispatcher = false;
-        while (!scheduled_tasks->empty()) {
+        while (!recurring_tasks->empty()) {
 
-            auto peek = scheduled_tasks->peek_time();
+            auto peek = recurring_tasks->peek_time();
             if (!peek || peek->get() > now) break;
-            ready_tasks->push(std::move(*scheduled_tasks->pop()));
+            scheduled_tasks->push(std::move(*recurring_tasks->pop()));
             inform_dispatcher = true;
         }
 
@@ -183,14 +182,13 @@ void Scheduler::dispatchLoop() {
 
     while (true) {
         std::unique_lock<std::mutex> lk(dispatcher_mtx);
-        if (!running.load(std::memory_order_acquire) && ready_tasks->empty()) break; // drain all jobs before exit
+        if (!running.load(std::memory_order_acquire) && scheduled_tasks->empty()) break; // drain all jobs before exit
 
-        if (ready_tasks->empty()) {
-            dispatcher_cv.wait(lk, [&]{ return !running || !ready_tasks->empty(); });
+        if (scheduled_tasks->empty()) {
+            dispatcher_cv.wait(lk, [&]{ return !running || !scheduled_tasks->empty(); });
         }
-
-        while (batch.size() < MAX_BATCH && !ready_tasks->empty()) {
-            auto t = ready_tasks->pop();
+        while (batch.size() < MAX_BATCH && !scheduled_tasks->empty()) {
+            auto t = scheduled_tasks->pop();
             if (!t.has_value()) break;
             batch.push_back(std::move(*t));
         }
@@ -221,7 +219,7 @@ void Scheduler::dispatchLoop() {
         if (!recurring.empty()) {
             std::lock_guard<std::mutex> lk(dispatcher_mtx);
             for (auto& rt : recurring) {
-                scheduled_tasks->push(std::move(rt));
+                recurring_tasks->push(std::move(rt));
             }
             {
                 std::lock_guard<std::mutex> lk(promoter_mtx);
