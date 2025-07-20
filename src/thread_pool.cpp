@@ -38,7 +38,7 @@ void ThreadPool::stop() {
     threads.clear();
 }
 
-bool ThreadPool::submit(std::function<void()> job) {
+bool ThreadPool::enqueue(std::function<void()> job) {
     {
         std::lock_guard<std::mutex> lock{queue_mutex};
         if (!running) return false;

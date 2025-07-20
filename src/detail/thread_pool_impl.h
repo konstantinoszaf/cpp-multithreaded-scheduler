@@ -10,7 +10,7 @@ class ThreadPool : public IThreadPool {
 public:
     explicit ThreadPool(size_t numThreads);
     ~ThreadPool();
-    bool submit(std::function<void()> job) override;
+    bool enqueue(std::function<void()> job) override;
     void start() override;
     void stop() override;
     size_t threadCount() const noexcept;

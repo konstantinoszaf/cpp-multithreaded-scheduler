@@ -29,18 +29,16 @@ Scheduler::Scheduler(size_t numThreads) : running{false}
             return a.priority < b.priority; // higher priority first
         return a.sequence_number > b.sequence_number; // FIFO for same priority
     };
+    ready_tasks = std::make_shared<TaskQueue>(priorityComparator);
 
     // Time comparator lambda
     auto timeComparator = [](const Task& a, const Task& b) noexcept -> bool {
-        return a.scheduled_at > b.scheduled_at; // earliest scheduled first
+        return a.scheduled_at > b.scheduled_at; // earliest scheduled_tasks first
     };
+    scheduled_tasks = std::make_shared<TaskQueue>(timeComparator);
 
-    ready = std::make_shared<TaskQueue>(priorityComparator);
-    scheduled = std::make_shared<TaskQueue>(timeComparator);
     thread_pool = std::make_shared<ThreadPool>(numThreads);
     statistics = std::make_shared<StatisticsCalculator>();
-
-
 
     thread_pool->start();
     this->start();
@@ -52,7 +50,7 @@ Scheduler::Scheduler(std::shared_ptr<detail::IClock> clock_,
                      std::shared_ptr<detail::ITaskQueue> scheduled_,
                      std::shared_ptr<detail::IThreadPool> pool_,
                      std::shared_ptr<detail::IStatisticsCalculator> stats)
-    : clock{clock_}, ready{ready_}, scheduled{scheduled_}, thread_pool{pool_}, running{false}
+    : clock{clock_}, ready_tasks{ready_}, scheduled_tasks{scheduled_}, thread_pool{pool_}, running{false}
 {}
 
 Scheduler::~Scheduler()
@@ -78,7 +76,7 @@ void Scheduler::stop() {
         running = false;
     }
 
-    cv.notify_all();
+    ready_cv.notify_all();
     if (thread.joinable()) thread.join();
 }
 
@@ -99,8 +97,8 @@ void Scheduler::schedule(std::function<void()> job, int priority,
         deadline, //deadline
     };
 
-    ready->push(std::move(task));
-    cv.notify_one();
+    ready_tasks->push(std::move(task));
+    ready_cv.notify_one();
 }
 
 // Allow tasks that run repeatedly on an interval
@@ -122,40 +120,40 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
         std::nullopt, //deadline
     };
 
-    ready->push(std::move(task));
-    cv.notify_one();
+    ready_tasks->push(std::move(task));
+    ready_cv.notify_one();
 }
 
 void Scheduler::dispatchLoop() {
     while (true) {
         std::unique_lock<std::mutex> lk(mtx);
-        if (!running && ready->empty()) break; // drain all jobs before exit
+        if (!running && ready_tasks->empty()) break; // drain all jobs before exit
 
         auto now = clock->now();
 
-        // 1) Promote any due tasks from scheduled to ready
-        while (!scheduled->empty()) {
-            auto peek = scheduled->peek_time();
+        // 1) Promote any due tasks from scheduled_tasks to ready_tasks
+        while (!scheduled_tasks->empty()) {
+            auto peek = scheduled_tasks->peek_time();
             if (!peek || peek->get() > now) break;
-            ready->push(std::move(*scheduled->pop()));
+            ready_tasks->push(std::move(*scheduled_tasks->pop()));
         }
 
-        // 2) If no ready tasks, sleep until either:
+        // 2) If no ready_tasks tasks, sleep until either:
         //    a) a new task arrives (cv.notify_one)
-        //    b) the next scheduled task’s time
-        if (ready->empty()) {
-            if (scheduled->empty()) {
-                cv.wait(lk);  // nothing at all
+        //    b) the next scheduled_tasks task’s time
+        if (ready_tasks->empty()) {
+            if (scheduled_tasks->empty()) {
+                ready_cv.wait(lk);  // nothing at all
             } else {
-                auto next_time = scheduled->peek_time();
-                cv.wait_until(lk, next_time->get());
+                auto next_time = scheduled_tasks->peek_time();
+                ready_cv.wait_until(lk, next_time->get());
             }
             // when we wake, lk is re-acquired -> loop back to (1)
             continue;
         }
 
-        // 3) Pop the highest-priority ready task
-        Task task = std::move(*ready->pop());
+        // 3) Pop the highest-priority ready_tasks task
+        Task task = std::move(*ready_tasks->pop());
         bool is_recurring = task.interval.count() > 0;
 
         Task recurring_task;
@@ -177,15 +175,15 @@ void Scheduler::dispatchLoop() {
 
         if (is_recurring) {
             std::lock_guard<std::mutex> lock{mtx};
-            scheduled->push(std::move(recurring_task));
-            cv.notify_one();
+            scheduled_tasks->push(std::move(recurring_task));
+            ready_cv.notify_one();
         }
 
     }
 }
 
 void Scheduler::dispatchOne(Task task) {
-    thread_pool->submit([this, task = std::move(task)]{
+    thread_pool->enqueue([this, task = std::move(task)]{
         auto start = clock->now();
         statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::milliseconds>(start - task.enqueue_time).count());
         if (task.deadline && start > *task.deadline)
@@ -200,8 +198,7 @@ void Scheduler::dispatchOne(Task task) {
     });
 }
 
-std::tuple<double, double, double> Scheduler::getLatencyStatistics() const
-{
+std::tuple<double, double, double> Scheduler::getLatencyStatistics() const {
     return statistics->getLatencyStatistics();
 }
 
