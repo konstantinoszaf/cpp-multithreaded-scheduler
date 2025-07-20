@@ -3,6 +3,7 @@
 #include <future>
 #include <gmock/gmock.h>
 #include "detail/thread_pool_impl.h"
+#include <latch>
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -23,39 +24,6 @@ protected:
     }
 
     std::unique_ptr<ThreadPool> pool;
-};
-
-class CountDownLatch
-{
-public:
-    // Construct with an initial count
-    explicit CountDownLatch(int count)
-        : count_{count}
-    {
-    }
-
-    // Decrement the count. When it reaches zero, wake all waiters.
-    void count_down()
-    {
-        std::lock_guard<std::mutex> lk{m_};
-        if (count_ > 0 && --count_ == 0)
-        {
-            cv_.notify_all();
-        }
-    }
-
-    // Block until count_ reaches zero.
-    void wait()
-    {
-        std::unique_lock<std::mutex> lk{m_};
-        cv_.wait(lk, [&]
-                 { return count_ == 0; });
-    }
-
-private:
-    std::mutex m_;
-    std::condition_variable cv_;
-    int count_;
 };
 
 struct MockTask
@@ -104,8 +72,7 @@ TEST_F(ThreadPoolTest, MultipleMockTasksInvokeCallback)
     // Submit N tasks that call m.inc(counter)
     for (int i = 0; i < N; ++i)
     {
-        ASSERT_TRUE(pool->submit([&]
-                                 { m.inc(counter); }));
+        ASSERT_TRUE(pool->submit([&]{ m.inc(counter); }));
     }
 
     // Wait until counter == N
@@ -133,14 +100,12 @@ TEST_F(ThreadPoolTest, ExceptionInOneTaskDoesNotBlockOthers)
 
     // First task throws
     EXPECT_CALL(m, boom())
-        .WillOnce(InvokeWithoutArgs([]
-                                    { throw std::runtime_error("fail"); }));
+        .WillOnce(InvokeWithoutArgs([]{ throw std::runtime_error("fail"); }));
 
     // Second task should still run and fulfill the promise
     std::promise<void> p;
     EXPECT_CALL(m, safe())
-        .WillOnce(InvokeWithoutArgs([&]
-                                    { p.set_value(); }));
+        .WillOnce(InvokeWithoutArgs([&]{ p.set_value(); }));
 
     ASSERT_TRUE(pool->submit([&]{ m.boom(); }));
     ASSERT_TRUE(pool->submit([&]{ m.safe(); }));
@@ -178,7 +143,7 @@ TEST_F(ThreadPoolTest, PendingTasksDrainedOnShutdown)
     EXPECT_CALL(m, run()).Times(N);
 
     // Block tasks on a latch
-    CountDownLatch start{1}, done{N};
+    std::latch start{1}, done{N};
     for (int i = 0; i < N; ++i)
     {
         ASSERT_TRUE(pool->submit([&] {
