@@ -63,8 +63,8 @@ Scheduler::~Scheduler()
 void Scheduler::start() {
     {
         std::lock_guard<std::mutex> lock{dispatcher_mtx};
-        if (running) return;
-        running.store(true, std::memory_order_relaxed);
+        if (running.load(std::memory_order_acquire)) return;
+        running.store(true, std::memory_order_release);
     }
 
     dispatcher_thread = std::thread{std::bind(&Scheduler::dispatchLoop, this)};
@@ -74,8 +74,8 @@ void Scheduler::start() {
 void Scheduler::stop() {
     {
         std::unique_lock<std::mutex> lock(promoter_mtx);
-        if (!running) return;
-        running.store(false, std::memory_order_relaxed);
+        if (!running.load(std::memory_order_acquire)) return;
+        running.store(false, std::memory_order_release);
         promoter_cv.notify_all();
     }
 
@@ -94,7 +94,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
     if (!job) return;
     std::lock_guard<std::mutex> lock{dispatcher_mtx};
 
-    auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
+    auto seq = sequence_number.fetch_add(1, std::memory_order_acquire);
     Task task{
         std::move(job), //job
         calculatePriority(priority, deadline), //priority
@@ -135,7 +135,7 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
 void Scheduler::promoteTasks() {
     while (true) {
         std::unique_lock<std::mutex> lock{promoter_mtx};
-        if (!running && scheduled_tasks->empty()) break;
+        if (!running.load(std::memory_order_acquire) && scheduled_tasks->empty()) break;
 
         // sleep until there is something in the queue, or until the next periodic
         // task should be triggered
@@ -183,7 +183,7 @@ void Scheduler::dispatchLoop() {
 
     while (true) {
         std::unique_lock<std::mutex> lk(dispatcher_mtx);
-        if (!running && ready_tasks->empty()) break; // drain all jobs before exit
+        if (!running.load(std::memory_order_acquire) && ready_tasks->empty()) break; // drain all jobs before exit
 
         if (ready_tasks->empty()) {
             dispatcher_cv.wait(lk, [&]{ return !running || !ready_tasks->empty(); });
