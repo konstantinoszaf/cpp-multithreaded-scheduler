@@ -1,15 +1,16 @@
 #include <scheduler/scheduler.h>
-#include <iostream>
 #include <chrono>
 #include <random>
 #include <thread>
 #include <atomic>
+#include <spdlog/spdlog.h>
 
 int main() {
     using namespace std::chrono_literals;
 
+    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e [tid=%t] %v");
     scheduler::Scheduler scheduler{4};
-
+    // spdlog::info("Scheduling multiple tasks");
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> priority_dist(1, 10);
@@ -18,10 +19,7 @@ int main() {
 
     auto job = [executions](){
         auto count = executions->fetch_add(1);
-        auto now = std::chrono::system_clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        // std::cout << ms << "#" << count << " executed by thread "
-        //           << std::this_thread::get_id() << "\n";
+        // spdlog::info("#{} executed.", count);
     };
 
     // Schedule recurring task
@@ -32,9 +30,7 @@ int main() {
         auto p = priority_dist(gen);
         scheduler.schedule(
             [i, p](){
-                auto now = std::chrono::system_clock::now();
-                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                // std::cout << ms << " " << i << " one-off with prio " << p << '\n';
+                // spdlog::info("#{} one off with prio {}", i, p);
             },
             p,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(10 * i)
@@ -42,9 +38,9 @@ int main() {
     }
 
     // Simulate bursty workload
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 10000; ++i) {
         scheduler.schedule(job, priority_dist(gen),
-            std::chrono::steady_clock::now() + 10ms);
+            std::chrono::steady_clock::now() + 20ms);
     }
 
     // Allow tasks to execute
@@ -54,11 +50,11 @@ int main() {
     auto [average, minimum, maximum] = scheduler.getLatencyStatistics();
     uint64_t missed = scheduler.getMissedTasks();
 
-    std::cout << "\n=== Scheduler Latency Results ===\n"
-              << "Average Latency: " << average << " ms\n"
-              << "Minimum Latency: " << minimum << " ms\n"
-              << "Maximum Latency: " << maximum << " ms\n"
-              << "Missed tasks: " << missed << '\n';
+    spdlog::info("=== Scheduler Latency Results ===");
+    spdlog::info("Average Latency: {} ms", average);
+    spdlog::info("Minimum Latency: {} ms", minimum);
+    spdlog::info("Maximum Latency: {} ms", maximum);
+    spdlog::info("Missed tasks: {}", missed);
 
     return 0;
 }

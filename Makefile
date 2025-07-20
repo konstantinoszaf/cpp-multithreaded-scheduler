@@ -1,7 +1,7 @@
 LOCAL_DIR := /usr/local/
 BUILD_DIR := build
 
-.PHONY: all build install build-tests run-tests test clean
+.PHONY: all build install build-tests run-tests test clean sanity
 
 all: build
 
@@ -10,6 +10,12 @@ build:
 	@cd $(BUILD_DIR) && \
 	    cmake -DBUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release .. && \
 	    cmake --build . -- -j
+
+build-main:
+	@mkdir -p $(BUILD_DIR)
+	@cd $(BUILD_DIR) && \
+	    cmake -DBUILD_TESTS=OFF -DBUILD_EXAMPLE=ON -DCMAKE_BUILD_TYPE=Release .. && \
+	    cmake --build . --target main -- -j
 
 run-main:
 	./$(BUILD_DIR)/main

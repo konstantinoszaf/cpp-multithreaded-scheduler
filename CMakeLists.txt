@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(scheduler LANGUAGES CXX)
 
 option(BUILD_TESTS "Build unit and integration tests" ON)
+option(BUILD_EXAMPLE  "Build the example 'main' executable (and pull spdlog)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,8 +25,27 @@ target_include_directories(scheduler
 find_package(Threads REQUIRED)
 target_link_libraries(scheduler PUBLIC Threads::Threads)
 
-add_executable(main main.cpp)
-target_link_libraries(main PRIVATE scheduler)
+if(BUILD_EXAMPLE)
+  include(FetchContent)
+  FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.11.0
+  )
+  FetchContent_MakeAvailable(spdlog)
+
+  add_executable(main main.cpp)
+  target_link_libraries(main
+    PRIVATE
+      scheduler
+      spdlog::spdlog_header_only
+  )
+
+  add_custom_target(example
+    DEPENDS main
+    COMMENT "Build the example/main executable"
+  )
+endif()
 
 install(TARGETS scheduler
         EXPORT schedulerTargets
