@@ -167,6 +167,12 @@ void Scheduler::promoteTasks() {
 }
 
 void Scheduler::dispatchLoop() {
+    constexpr size_t MAX_BATCH{8};
+    std::vector<Task> batch;
+    std::vector<Task> recurring;
+    batch.reserve(MAX_BATCH);
+    recurring.reserve(MAX_BATCH);
+
     while (true) {
         std::unique_lock<std::mutex> lk(dispatcher_mtx);
         if (!running && ready_tasks->empty()) break; // drain all jobs before exit
@@ -175,37 +181,43 @@ void Scheduler::dispatchLoop() {
             dispatcher_cv.wait(lk, [&]{ return !running || !ready_tasks->empty(); });
         }
 
-        auto t = ready_tasks->pop();
-        if (!t.has_value()) {
-            continue;
-        }
-
-        Task task = std::move(*t);
-        bool is_recurring = task.interval.count() > 0;
-
-        Task recurring_task;
-        if (is_recurring) {
-            auto now = clock->now();
-            auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
-            recurring_task = Task{
-                task.job, // copy the callable
-                task.priority,
-                seq,
-                now + task.interval, // scheduled_at
-                task.interval,
-                now, // enqueue_time
-                std::nullopt // no deadline for recurring
-            };
+        while (batch.size() < MAX_BATCH && !ready_tasks->empty()) {
+            auto t = ready_tasks->pop();
+            if (!t.has_value()) break;
+            batch.push_back(std::move(*t));
         }
 
         lk.unlock();
-        thread_pool->enqueue([this, task = std::move(task)]{ dispatchOne(std::move(task)); });
 
-        if (is_recurring) {
-            std::lock_guard<std::mutex> lock{dispatcher_mtx};
-            scheduled_tasks->push(std::move(recurring_task));
+        for (auto& t : batch) {
+            Task task = std::move(t);
+            bool is_recurring = task.interval.count() > 0;
+
+            if (is_recurring) {
+                auto now = clock->now();
+                auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
+                recurring.push_back(Task{
+                    task.job, // copy the callable
+                    task.priority,
+                    seq,
+                    now + task.interval, // scheduled_at
+                    task.interval,
+                    now, // enqueue_time
+                    std::nullopt // no deadline for recurring
+                });
+            }
+
+            thread_pool->enqueue([this, task = std::move(task)]{ dispatchOne(std::move(task)); });
+        }
+        batch.clear();
+        if (!recurring.empty()) {
+            std::lock_guard<std::mutex> lk(dispatcher_mtx);
+            for (auto& rt : recurring) {
+                scheduled_tasks->push(std::move(rt));
+            }
             promoter_cv.notify_one();
         }
+        recurring.clear();
     }
 }
 

@@ -25,7 +25,7 @@ int main() {
     };
 
     // Schedule recurring task
-    scheduler.scheduleRecurring(job, 5, 50ms);
+    scheduler.scheduleRecurring(job, 5, 1ms);
 
     // Schedule tasks with varying priorities and explicit deadlines
     for (int i = 0; i < 10; ++i) {
@@ -44,7 +44,7 @@ int main() {
     // Simulate bursty workload
     for (int i = 0; i < 1000; ++i) {
         scheduler.schedule(job, priority_dist(gen),
-            std::chrono::steady_clock::now() + 50ms);
+            std::chrono::steady_clock::now() + 30ms);
     }
 
     // Allow tasks to execute
