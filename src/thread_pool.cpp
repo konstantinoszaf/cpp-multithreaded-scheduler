@@ -62,7 +62,7 @@ void ThreadPool::workerLoop() {
         try {
             job();
         } catch (...) {
-            // handle or log accordingly
+            // ignore
         }
 
     }

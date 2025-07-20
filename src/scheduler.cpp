@@ -10,7 +10,7 @@ using namespace detail;
 
 static constexpr int BASE_MAX = 100;
 static constexpr int BOOST    = 1000;
-static constexpr std::chrono::milliseconds imminate_time{10};
+static constexpr std::chrono::milliseconds imminent_time{10};
 
 Scheduler::Scheduler(size_t numThreads) : running{false}
 {
@@ -253,7 +253,7 @@ uint64_t Scheduler::getMissedTasks() {
 uint64_t Scheduler::calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline) {
     priority = std::clamp(priority, 0, BASE_MAX);
 
-    if (deadline && (*deadline - clock->now() <= imminate_time)) return BASE_MAX + BOOST;
+    if (deadline && (*deadline - clock->now() <= imminent_time)) return BASE_MAX + BOOST;
 
     return priority;
 }

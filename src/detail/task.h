@@ -33,13 +33,5 @@ struct Task {
       , sequence_number(seq)
     {}
 
-    // // If my priority is less than them, i am less than them
-    // // if they are equal, and my sequence number is greater than them, i am less
-    // // than them (FIFO)
-    // bool operator<(Task const& other) const noexcept {
-    //     if (priority != other.priority)
-    //         return priority < other.priority;
-    //     return sequence_number > other.sequence_number;
-    // }
 };
 } //namespace scheduler::detail
