@@ -4,6 +4,7 @@
 #include "detail/thread_pool_impl.h"
 #include "detail/statistics_calculator_impl.h"
 #include "detail/task.h"
+#include <iostream>
 
 using namespace scheduler;
 using namespace detail;
@@ -61,36 +62,40 @@ Scheduler::~Scheduler()
 
 void Scheduler::start() {
     {
-        std::lock_guard<std::mutex> lock{mtx};
+        std::lock_guard<std::mutex> lock{dispatcher_mtx};
         if (running) return;
         running = true;
     }
 
-    thread = std::thread{std::bind(&Scheduler::dispatchLoop, this)};
+    dispatcher_thread = std::thread{std::bind(&Scheduler::dispatchLoop, this)};
+    promoter_thread = std::thread{std::bind(&Scheduler::promoteTasks, this)};
 }
 
 void Scheduler::stop() {
     {
-        std::unique_lock<std::mutex> lock{mtx};
+        std::unique_lock<std::mutex> lock{dispatcher_mtx};
         if (!running) return;
         running = false;
     }
 
-    ready_cv.notify_all();
-    if (thread.joinable()) thread.join();
+    promoter_cv.notify_all();
+    dispatcher_cv.notify_all();
+
+    if (promoter_thread.joinable())   promoter_thread.join();
+    if (dispatcher_thread.joinable()) dispatcher_thread.join();
 }
 
 void Scheduler::schedule(std::function<void()> job, int priority,
                          std::optional<std::chrono::steady_clock::time_point> deadline)
 {
     if (!job) return;
-    std::lock_guard<std::mutex> lock{mtx};
+    std::lock_guard<std::mutex> lock{dispatcher_mtx};
 
-    sequence_number.fetch_add(1, std::memory_order_relaxed);
+    auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
     Task task{
         std::move(job), //job
         calculatePriority(priority, deadline), //priority
-        sequence_number.load(), //sequence_number
+        seq, //sequence_number
         clock->now(), // scheduled_at
         std::chrono::milliseconds{0}, // interval
         clock->now(), //enqueue_time
@@ -98,7 +103,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
     };
 
     ready_tasks->push(std::move(task));
-    ready_cv.notify_one();
+    dispatcher_cv.notify_one();
 }
 
 // Allow tasks that run repeatedly on an interval
@@ -107,13 +112,13 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
                                     milliseconds interval)
 {
     if (!job) return;
-    std::lock_guard<std::mutex> lock{mtx};
+    std::lock_guard<std::mutex> lock{dispatcher_mtx};
 
-    sequence_number.fetch_add(1, std::memory_order_relaxed);
+    auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
     Task task{
         std::move(job), //job
         calculatePriority(priority, std::nullopt), //priority
-        sequence_number.load(), //sequence_number
+        seq, //sequence_number
         clock->now(), // scheduled_at
         interval, // interval
         clock->now(), //enqueue_time
@@ -121,81 +126,99 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
     };
 
     ready_tasks->push(std::move(task));
-    ready_cv.notify_one();
+    dispatcher_cv.notify_one();
+}
+
+void Scheduler::promoteTasks() {
+    while (true) {
+        std::unique_lock<std::mutex> lock{promoter_mtx};
+        if (!running && scheduled_tasks->empty()) break;
+
+        // sleep until there is something in the queue, or until the next periodic
+        // task should be triggered
+        if (scheduled_tasks->empty()) {
+            promoter_cv.wait(lock, [&]{ return !running || !scheduled_tasks->empty(); });
+        } else {
+            auto next_time = scheduled_tasks->peek_time();
+            if (!next_time.has_value()) {
+                scheduled_tasks->pop();
+                continue;
+            }
+
+            auto trigger_time = next_time->get();
+            promoter_cv.wait_until(lock, trigger_time, [&]{
+                return !running || trigger_time <= clock->now();
+            });
+        }
+
+        auto now = clock->now();
+        // promote the tasks to ready in batches
+        bool inform_dispatcher = false;
+        while (!scheduled_tasks->empty()) {
+
+            auto peek = scheduled_tasks->peek_time();
+            if (!peek || peek->get() > now) break;
+            ready_tasks->push(std::move(*scheduled_tasks->pop()));
+            inform_dispatcher = true;
+        }
+
+        if (inform_dispatcher) dispatcher_cv.notify_one();
+    }
 }
 
 void Scheduler::dispatchLoop() {
     while (true) {
-        std::unique_lock<std::mutex> lk(mtx);
+        std::unique_lock<std::mutex> lk(dispatcher_mtx);
         if (!running && ready_tasks->empty()) break; // drain all jobs before exit
 
-        auto now = clock->now();
-
-        // 1) Promote any due tasks from scheduled_tasks to ready_tasks
-        while (!scheduled_tasks->empty()) {
-            auto peek = scheduled_tasks->peek_time();
-            if (!peek || peek->get() > now) break;
-            ready_tasks->push(std::move(*scheduled_tasks->pop()));
+        if (ready_tasks->empty()) {
+            dispatcher_cv.wait(lk, [&]{ return !running || !ready_tasks->empty(); });
         }
 
-        // 2) If no ready_tasks tasks, sleep until either:
-        //    a) a new task arrives (cv.notify_one)
-        //    b) the next scheduled_tasks task’s time
-        if (ready_tasks->empty()) {
-            if (scheduled_tasks->empty()) {
-                ready_cv.wait(lk);  // nothing at all
-            } else {
-                auto next_time = scheduled_tasks->peek_time();
-                ready_cv.wait_until(lk, next_time->get());
-            }
-            // when we wake, lk is re-acquired -> loop back to (1)
+        auto t = ready_tasks->pop();
+        if (!t.has_value()) {
             continue;
         }
 
-        // 3) Pop the highest-priority ready_tasks task
-        Task task = std::move(*ready_tasks->pop());
+        Task task = std::move(*t);
         bool is_recurring = task.interval.count() > 0;
 
         Task recurring_task;
         if (is_recurring) {
             auto now = clock->now();
+            auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
             recurring_task = Task{
                 task.job, // copy the callable
                 task.priority,
-                sequence_number.fetch_add(1, std::memory_order_relaxed),
-                now + task.interval,        // scheduled_at
+                seq,
+                now + task.interval, // scheduled_at
                 task.interval,
-                now,        // enqueue_time
-                std::nullopt                // no deadline for recurring
+                now, // enqueue_time
+                std::nullopt // no deadline for recurring
             };
         }
 
         lk.unlock();
-        dispatchOne(std::move(task));
+        thread_pool->enqueue([this, task = std::move(task)]{ dispatchOne(std::move(task)); });
 
         if (is_recurring) {
-            std::lock_guard<std::mutex> lock{mtx};
+            std::lock_guard<std::mutex> lock{dispatcher_mtx};
             scheduled_tasks->push(std::move(recurring_task));
-            ready_cv.notify_one();
+            promoter_cv.notify_one();
         }
-
     }
 }
 
 void Scheduler::dispatchOne(Task task) {
-    thread_pool->enqueue([this, task = std::move(task)]{
-        auto start = clock->now();
-        statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::milliseconds>(start - task.enqueue_time).count());
-        if (task.deadline && start > *task.deadline)
-            missed_tasks.fetch_add(1, std::memory_order_relaxed);
+    auto start = clock->now();
+    statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::milliseconds>(start - task.enqueue_time).count());
+    if (task.deadline && start > *task.deadline)
+        missed_tasks.fetch_add(1, std::memory_order_relaxed);
 
-        try {
-            if (!task.job) {
-                return;
-            }
-            task.job(); }
-        catch(...) { /* log */ }
-    });
+    try {
+        task.job();
+    } catch(...)
+    { /* log */ }
 }
 
 std::tuple<double, double, double> Scheduler::getLatencyStatistics() const {

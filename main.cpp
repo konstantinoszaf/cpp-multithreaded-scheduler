@@ -17,19 +17,26 @@ int main() {
     auto executions = std::make_shared<std::atomic<uint64_t>>(0);
 
     auto job = [executions](){
-        // auto count = executions->fetch_add(1);
-        // std::cout << "Periodic Task #" << count << " executed by thread "
-        //           << std::this_thread::get_id() << "\n";
+        auto count = executions->fetch_add(1);
+        auto now = std::chrono::system_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        std::cout << ms << "#" << count << " executed by thread "
+                  << std::this_thread::get_id() << "\n";
     };
 
     // Schedule recurring task
-    scheduler.scheduleRecurring(job, 5, 1ms);
+    scheduler.scheduleRecurring(job, 5, 50ms);
 
     // Schedule tasks with varying priorities and explicit deadlines
     for (int i = 0; i < 10; ++i) {
+        auto p = priority_dist(gen);
         scheduler.schedule(
-            [i](){},
-            priority_dist(gen),
+            [i, p](){
+                auto now = std::chrono::system_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                std::cout << ms << " " << i << " one-off with prio " << p << '\n';
+            },
+            p,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(10 * i)
         );
     }

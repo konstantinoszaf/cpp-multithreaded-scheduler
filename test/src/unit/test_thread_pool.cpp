@@ -42,8 +42,8 @@ TEST_F(ThreadPoolTest, MockCallbackSetsPromise)
         .WillOnce(InvokeWithoutArgs([&]
                                     { p.set_value(); }));
 
-    // submit a lambda that calls our mock
-    ASSERT_TRUE(pool->submit([&]
+    // enqueue a lambda that calls our mock
+    ASSERT_TRUE(pool->enqueue([&]
                              { m.run(); }));
 
     // wait (up to 1s) for the callback to fire
@@ -69,10 +69,10 @@ TEST_F(ThreadPoolTest, MultipleMockTasksInvokeCallback)
             [&counter](std::atomic<int> &c)
             { c.fetch_add(1, std::memory_order_relaxed); }));
 
-    // Submit N tasks that call m.inc(counter)
+    // enqueue N tasks that call m.inc(counter)
     for (int i = 0; i < N; ++i)
     {
-        ASSERT_TRUE(pool->submit([&]{ m.inc(counter); }));
+        ASSERT_TRUE(pool->enqueue([&]{ m.inc(counter); }));
     }
 
     // Wait until counter == N
@@ -107,8 +107,8 @@ TEST_F(ThreadPoolTest, ExceptionInOneTaskDoesNotBlockOthers)
     EXPECT_CALL(m, safe())
         .WillOnce(InvokeWithoutArgs([&]{ p.set_value(); }));
 
-    ASSERT_TRUE(pool->submit([&]{ m.boom(); }));
-    ASSERT_TRUE(pool->submit([&]{ m.safe(); }));
+    ASSERT_TRUE(pool->enqueue([&]{ m.boom(); }));
+    ASSERT_TRUE(pool->enqueue([&]{ m.safe(); }));
 
     ASSERT_EQ(std::future_status::ready,
               p.get_future().wait_for(std::chrono::seconds(1)));
@@ -125,8 +125,8 @@ TEST_F(ThreadPoolTest, NoTasksRunAfterStop)
     EXPECT_CALL(m, shouldNotRun()).Times(0);
 
     pool->stop();
-    // submit returns false, so mock is never invoked
-    EXPECT_FALSE(pool->submit([&]{ m.shouldNotRun(); }));
+    // enqueue returns false, so mock is never invoked
+    EXPECT_FALSE(pool->enqueue([&]{ m.shouldNotRun(); }));
 }
 
 struct DrainMock
@@ -146,7 +146,7 @@ TEST_F(ThreadPoolTest, PendingTasksDrainedOnShutdown)
     std::latch start{1}, done{N};
     for (int i = 0; i < N; ++i)
     {
-        ASSERT_TRUE(pool->submit([&] {
+        ASSERT_TRUE(pool->enqueue([&] {
             start.wait();
             m.run();
             done.count_down(); }));

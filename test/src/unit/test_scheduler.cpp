@@ -50,7 +50,7 @@ protected:
         mockStats = std::make_shared<MockStatisticsCalculator>();
 
         // Default behaviors
-        ON_CALL(*mockThreadPool, submit(testing::_)).WillByDefault(testing::Return(true));
+        ON_CALL(*mockThreadPool, enqueue(testing::_)).WillByDefault(testing::Return(true));
         ON_CALL(*mockStats, getLatencyStatistics()).WillByDefault(testing::Return(std::make_tuple(0.0,0.0,0.0)));
 
         sched = std::make_unique<TestableScheduler>(

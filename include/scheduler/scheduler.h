@@ -56,7 +56,7 @@ protected:
 private:
     void dispatchOne(detail::Task task);
     uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
-
+    void promoteTasks();
     std::shared_ptr<detail::IClock> clock;
     std::shared_ptr<detail::ITaskQueue> ready_tasks;
     std::shared_ptr<detail::ITaskQueue> scheduled_tasks;
@@ -65,10 +65,13 @@ private:
     std::atomic<uint64_t> sequence_number{0};
     std::atomic<uint64_t> missed_tasks{0};
     std::chrono::milliseconds deadline_imminence{10};
-    std::mutex mtx;
-    std::condition_variable ready_cv;
+    std::mutex dispatcher_mtx;
+    std::mutex promoter_mtx;
+    std::condition_variable dispatcher_cv;
+    std::condition_variable promoter_cv;
     bool running;
-    std::thread thread;
+    std::thread dispatcher_thread;
+    std::thread promoter_thread;
 };
 
 }; // namespace Scheduler
