@@ -250,10 +250,11 @@ uint64_t Scheduler::getMissedTasks() {
     return missed_tasks.load();
 }
 
+// this is a static way of handling tasks that are in danger of reaching their deadline.
 uint64_t Scheduler::calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline) {
     priority = std::clamp(priority, 0, BASE_MAX);
 
-    if (deadline && (*deadline - clock->now() <= imminent_time)) return BASE_MAX + BOOST;
+    if (deadline && (*deadline - clock->now() <= imminent_time)) return BASE_MAX + BOOST + priority;
 
     return priority;
 }

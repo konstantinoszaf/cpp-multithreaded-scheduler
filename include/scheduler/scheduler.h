@@ -52,11 +52,12 @@ protected:
     void dispatchLoop();
     void start();
     void stop();
+    uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
+
     std::atomic<bool> running;
 
 private:
     void dispatchOne(detail::Task task);
-    uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
     void promoteTasks();
     std::shared_ptr<detail::IClock> clock;
     std::shared_ptr<detail::ITaskQueue> scheduled_tasks;

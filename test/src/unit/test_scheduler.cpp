@@ -24,6 +24,7 @@ public:
     using Scheduler::dispatchLoop;
     using Scheduler::stop;
     using Scheduler::running;
+    using Scheduler::calculatePriority;
 
     void setRunning(bool v) {
         running.store(v, std::memory_order_release);
@@ -123,4 +124,46 @@ TEST_F(TestScheduler, DispatchLoopSchedulesRecurringTask) {
     EXPECT_CALL(*mockThreadPool, enqueue(testing::_)).Times(1);
 
     sched->runDispatchLoop();
+}
+
+TEST_F(TestScheduler, BoostsWhenDeadlineIsImminent) {
+    using namespace std::chrono;
+
+    // Arrange
+    // Define a fixed “now” for our mock clock
+    auto base_time = steady_clock::now();
+    EXPECT_CALL(*mockClock, now())
+        .WillOnce(::testing::Return(base_time));
+
+    // priority to test and a deadline exactly at the imminent_time threshold (10ms)
+    const int priority = 50;
+    const auto deadline = base_time + milliseconds{10};
+
+    // Act
+    uint64_t result = sched->calculatePriority(priority, deadline);
+
+    // Assert
+    // BASE_MAX = 100, BOOST = 1000, so we expect 100 + 1000 + 50 = 1150
+    EXPECT_EQ(result, 1150u);
+}
+
+TEST_F(TestScheduler, DoesNotBoostsWhenDeadlineIsImminent) {
+    using namespace std::chrono;
+
+    // Arrange
+    // Define a fixed “now” for our mock clock
+    auto base_time = steady_clock::now();
+    EXPECT_CALL(*mockClock, now())
+        .WillOnce(::testing::Return(base_time));
+
+    // priority to test and a deadline exactly at the imminent_time threshold (10ms)
+    const int priority = 50;
+    const auto deadline = base_time + milliseconds{11};
+
+    // Act
+    uint64_t result = sched->calculatePriority(priority, deadline);
+
+    // Assert
+    // BASE_MAX = 100, BOOST = 1000, so we expect 100 + 1000 + 50 = 1150
+    EXPECT_EQ(result, 50u);
 }
