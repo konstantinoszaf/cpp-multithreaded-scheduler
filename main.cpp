@@ -20,8 +20,8 @@ int main() {
         auto count = executions->fetch_add(1);
         auto now = std::chrono::system_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        std::cout << ms << "#" << count << " executed by thread "
-                  << std::this_thread::get_id() << "\n";
+        // std::cout << ms << "#" << count << " executed by thread "
+        //           << std::this_thread::get_id() << "\n";
     };
 
     // Schedule recurring task
@@ -34,7 +34,7 @@ int main() {
             [i, p](){
                 auto now = std::chrono::system_clock::now();
                 auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                std::cout << ms << " " << i << " one-off with prio " << p << '\n';
+                // std::cout << ms << " " << i << " one-off with prio " << p << '\n';
             },
             p,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(10 * i)
@@ -44,7 +44,7 @@ int main() {
     // Simulate bursty workload
     for (int i = 0; i < 1000; ++i) {
         scheduler.schedule(job, priority_dist(gen),
-            std::chrono::steady_clock::now() + 30ms);
+            std::chrono::steady_clock::now() + 10ms);
     }
 
     // Allow tasks to execute

@@ -69,7 +69,7 @@ private:
     std::mutex promoter_mtx;
     std::condition_variable dispatcher_cv;
     std::condition_variable promoter_cv;
-    bool running;
+    std::atomic<bool> running;
     std::thread dispatcher_thread;
     std::thread promoter_thread;
 };

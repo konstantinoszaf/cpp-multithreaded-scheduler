@@ -64,7 +64,7 @@ void Scheduler::start() {
     {
         std::lock_guard<std::mutex> lock{dispatcher_mtx};
         if (running) return;
-        running = true;
+        running.store(true, std::memory_order_relaxed);
     }
 
     dispatcher_thread = std::thread{std::bind(&Scheduler::dispatchLoop, this)};
@@ -73,13 +73,16 @@ void Scheduler::start() {
 
 void Scheduler::stop() {
     {
-        std::unique_lock<std::mutex> lock{dispatcher_mtx};
+        std::unique_lock<std::mutex> lock(promoter_mtx);
         if (!running) return;
-        running = false;
+        running.store(false, std::memory_order_relaxed);
+        promoter_cv.notify_all();
     }
 
-    promoter_cv.notify_all();
-    dispatcher_cv.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(dispatcher_mtx);
+        dispatcher_cv.notify_all();
+    }
 
     if (promoter_thread.joinable())   promoter_thread.join();
     if (dispatcher_thread.joinable()) dispatcher_thread.join();
@@ -162,7 +165,12 @@ void Scheduler::promoteTasks() {
             inform_dispatcher = true;
         }
 
-        if (inform_dispatcher) dispatcher_cv.notify_one();
+        lock.unlock();
+        if (inform_dispatcher)
+        {
+            std::lock_guard<std::mutex> lk(dispatcher_mtx);
+            dispatcher_cv.notify_one();
+        }
     }
 }
 
@@ -215,7 +223,10 @@ void Scheduler::dispatchLoop() {
             for (auto& rt : recurring) {
                 scheduled_tasks->push(std::move(rt));
             }
-            promoter_cv.notify_one();
+            {
+                std::lock_guard<std::mutex> lk(promoter_mtx);
+                promoter_cv.notify_one();
+            }
         }
         recurring.clear();
     }

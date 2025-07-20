@@ -29,9 +29,9 @@ void ThreadPool::stop() {
         std::unique_lock<std::mutex> lock{queue_mutex};
         if (!running) return;
         running = false;
+        cv.notify_all();
     }
 
-    cv.notify_all();
     for (std::thread& active_thread : threads) {
         active_thread.join();
     }
@@ -39,11 +39,9 @@ void ThreadPool::stop() {
 }
 
 bool ThreadPool::enqueue(std::function<void()> job) {
-    {
-        std::lock_guard<std::mutex> lock{queue_mutex};
-        if (!running) return false;
-        jobs.emplace_back(std::move(job));
-    }
+    std::lock_guard<std::mutex> lock{queue_mutex};
+    if (!running) return false;
+    jobs.emplace_back(std::move(job));
     cv.notify_all();
     return true;
 }

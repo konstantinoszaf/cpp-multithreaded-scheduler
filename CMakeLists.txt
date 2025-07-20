@@ -2,14 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 project(scheduler LANGUAGES CXX)
 
 option(BUILD_TESTS "Build unit and integration tests" ON)
-option(USE_TSAN "Enable ThreadSanitizer for all targets" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-option(BUILD_TESTS "Build unit and integration tests" ON)
-option(USE_TSAN "Enable ThreadSanitizer for all targets" OFF)
 
 file(GLOB_RECURSE SCHEDULER_SRC
     "${CMAKE_SOURCE_DIR}/src/*.cpp"

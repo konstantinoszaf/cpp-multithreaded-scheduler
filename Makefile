@@ -11,6 +11,13 @@ build:
 	    cmake -DBUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release .. && \
 	    cmake --build . -- -j
 
+run-main:
+	./$(BUILD_DIR)/main
+
+sanity:
+	valgrind --tool=helgrind --history-level=approx  --log-file=helgrind.out  ./$(BUILD_DIR)/main
+	valgrind --leak-check=full --show-leak-kinds=all --log-file=leak_check.log ./$(BUILD_DIR)/main
+
 install:
 	@cd $(BUILD_DIR) && \
 	    cmake --install . --prefix $(LOCAL_DIR)
