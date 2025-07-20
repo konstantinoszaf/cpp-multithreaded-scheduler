@@ -22,7 +22,7 @@ run-main:
 
 sanity:
 	valgrind --tool=helgrind --history-level=approx  --log-file=helgrind.out  ./$(BUILD_DIR)/main
-	valgrind --leak-check=full --show-leak-kinds=all --log-file=leak_check.log ./$(BUILD_DIR)/main
+	valgrind --leak-check=full --show-leak-kinds=all --log-file=leak_check.out ./$(BUILD_DIR)/main
 
 install:
 	@cd $(BUILD_DIR) && \
