@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "scheduler/scheduler.h"
-#include "mock_clock.h"
 #include "mock_statistics_calculator.h"
 #include "mock_task_queue.h"
 #include "mock_thread_pool.h"
@@ -12,12 +11,11 @@ using namespace scheduler::detail;
 class TestableScheduler : public Scheduler {
 public:
     // Expose the injection constructor explicitly
-    TestableScheduler(std::shared_ptr<detail::IClock> clock,
-                     std::shared_ptr<detail::ITaskQueue> ready,
+    TestableScheduler(std::shared_ptr<detail::ITaskQueue> ready,
                      std::shared_ptr<detail::ITaskQueue> scheduled,
                      std::shared_ptr<detail::IThreadPool> thread_pool,
                      std::shared_ptr<detail::IStatisticsCalculator> stats)
-      : Scheduler(clock, ready, scheduled, thread_pool, stats) {}
+      : Scheduler(ready, scheduled, thread_pool, stats) {}
 
     // Inherit default constructor
     using Scheduler::Scheduler;
@@ -39,7 +37,6 @@ public:
 
 class TestScheduler : public ::testing::Test {
 protected:
-    std::shared_ptr<MockClock> mockClock;
     std::shared_ptr<MockTaskQueue> mockScheduled;
     std::shared_ptr<MockTaskQueue> mockRecurring;
     std::shared_ptr<MockThreadPool> mockThreadPool;
@@ -47,7 +44,6 @@ protected:
     std::unique_ptr<TestableScheduler> sched;
 
     void SetUp() override {
-        mockClock = std::make_shared<MockClock>();
         mockScheduled = std::make_shared<MockTaskQueue>();
         mockRecurring = std::make_shared<MockTaskQueue>();
         mockThreadPool = std::make_shared<MockThreadPool>();
@@ -58,7 +54,6 @@ protected:
         ON_CALL(*mockStats, getLatencyStatistics()).WillByDefault(testing::Return(std::make_tuple(0.0,0.0,0.0)));
 
         sched = std::make_unique<TestableScheduler>(
-            mockClock,
             mockScheduled,
             mockRecurring,
             mockThreadPool,
@@ -76,7 +71,6 @@ protected:
 
 // Tests
 TEST_F(TestScheduler, EnqueueOneOffTaskPushesReadyQueue) {
-    EXPECT_CALL(*mockClock, now).Times(::testing::AtLeast(1));
     EXPECT_CALL(*mockThreadPool, stop).Times(::testing::AtLeast(1));
     EXPECT_CALL(*mockScheduled, push(testing::_));
     EXPECT_CALL(*mockRecurring, push(testing::_)).Times(0);
@@ -84,7 +78,6 @@ TEST_F(TestScheduler, EnqueueOneOffTaskPushesReadyQueue) {
 }
 
 TEST_F(TestScheduler, RecurringTaskPushesReadyOnce) {
-    EXPECT_CALL(*mockClock, now).Times(::testing::AtLeast(1));
     EXPECT_CALL(*mockThreadPool, stop).Times(::testing::AtLeast(1));
     EXPECT_CALL(*mockScheduled, push(testing::_)).Times(1);
     EXPECT_CALL(*mockRecurring, push(testing::_)).Times(0);
@@ -95,7 +88,6 @@ TEST_F(TestScheduler, DispatchLoopSchedulesRecurringTask) {
     // Enable dispatch loop
     sched->setRunning(true);
 
-    EXPECT_CALL(*mockClock, now).Times(::testing::AtLeast(1));
     EXPECT_CALL(*mockThreadPool, stop).Times(::testing::AtLeast(1));
 
     // Prepare a single recurring Task in the scheduled queue
@@ -130,14 +122,9 @@ TEST_F(TestScheduler, BoostsWhenDeadlineIsImminent) {
     using namespace std::chrono;
 
     // Arrange
-    // Define a fixed “now” for our mock clock
-    auto base_time = steady_clock::now();
-    EXPECT_CALL(*mockClock, now())
-        .WillOnce(::testing::Return(base_time));
-
     // priority to test and a deadline exactly at the imminent_time threshold (10ms)
     const int priority = 50;
-    const auto deadline = base_time + milliseconds{10};
+    const auto deadline = std::chrono::steady_clock::now() + milliseconds{10};
 
     // Act
     uint64_t result = sched->calculatePriority(priority, deadline);
@@ -151,14 +138,9 @@ TEST_F(TestScheduler, DoesNotBoostsWhenDeadlineIsImminent) {
     using namespace std::chrono;
 
     // Arrange
-    // Define a fixed “now” for our mock clock
-    auto base_time = steady_clock::now();
-    EXPECT_CALL(*mockClock, now())
-        .WillOnce(::testing::Return(base_time));
-
     // priority to test and a deadline exactly at the imminent_time threshold (10ms)
     const int priority = 50;
-    const auto deadline = base_time + milliseconds{11};
+    const auto deadline = std::chrono::steady_clock::now() + milliseconds{11};
 
     // Act
     uint64_t result = sched->calculatePriority(priority, deadline);

@@ -1,12 +1,12 @@
 #include "scheduler/scheduler.h"
 #include "detail/task_queue_impl.h"
-#include "detail/system_clock_impl.h"
 #include "detail/thread_pool_impl.h"
 #include "detail/statistics_calculator_impl.h"
 #include "detail/task.h"
 
 using namespace scheduler;
 using namespace detail;
+using steady_clock = std::chrono::steady_clock;
 
 static constexpr int BASE_MAX = 100;
 static constexpr int BOOST    = 1000;
@@ -17,11 +17,10 @@ Scheduler::Scheduler(size_t numThreads) : running{false}
     if (numThreads <= 0)
         numThreads = 1;
 
-    // Note: it’s generally better to inject abstractions (IThreadPool, IClock, ...)
+    // Note: it’s generally better to inject abstractions (IThreadPool, ...)
     // to decouple Scheduler from specific implementations. Here, however, we explicitly
     // construct default concrete instances so that SDK users only need to depend on
     // the Scheduler interface and aren’t exposed to the internals.
-    clock = std::make_shared<SystemClock>();
 
     // Create a task queue that sorts tasks based on the priority and sequence number (FIFO)
     auto priorityComparator = [](const Task& a, const Task& b) noexcept -> bool {
@@ -45,12 +44,11 @@ Scheduler::Scheduler(size_t numThreads) : running{false}
 }
 
 // for testing purposes
-Scheduler::Scheduler(std::shared_ptr<detail::IClock> clock_,
-                     std::shared_ptr<detail::ITaskQueue> ready_,
+Scheduler::Scheduler(std::shared_ptr<detail::ITaskQueue> ready_,
                      std::shared_ptr<detail::ITaskQueue> scheduled_,
                      std::shared_ptr<detail::IThreadPool> pool_,
                      std::shared_ptr<detail::IStatisticsCalculator> stats)
-    : clock{clock_}, scheduled_tasks{ready_}, recurring_tasks{scheduled_}, thread_pool{pool_}, running{false}
+    : scheduled_tasks{ready_}, recurring_tasks{scheduled_}, thread_pool{pool_}, running{false}
 {}
 
 Scheduler::~Scheduler()
@@ -98,9 +96,9 @@ void Scheduler::schedule(std::function<void()> job, int priority,
         std::move(job), //job
         calculatePriority(priority, deadline), //priority
         seq, //sequence_number
-        clock->now(), // scheduled_at
+        steady_clock::now(), // scheduled_at
         std::chrono::milliseconds{0}, // interval
-        clock->now(), //enqueue_time
+        steady_clock::now(), //enqueue_time
         deadline, //deadline
     };
 
@@ -121,9 +119,9 @@ void Scheduler::scheduleRecurring(std::function<void()> job,
         std::move(job), //job
         calculatePriority(priority, std::nullopt), //priority
         seq, //sequence_number
-        clock->now(), // scheduled_at
+        steady_clock::now(), // scheduled_at
         interval, // interval
-        clock->now(), //enqueue_time
+        steady_clock::now(), //enqueue_time
         std::nullopt, //deadline
     };
 
@@ -149,11 +147,11 @@ void Scheduler::promoteTasks() {
 
             auto trigger_time = next_time->get();
             promoter_cv.wait_until(lock, trigger_time, [&]{
-                return !running || trigger_time <= clock->now();
+                return !running || trigger_time <= steady_clock::now();
             });
         }
 
-        auto now = clock->now();
+        auto now = steady_clock::now();
         // promote the tasks to ready in batches
         bool inform_dispatcher = false;
         while (!recurring_tasks->empty()) {
@@ -200,7 +198,7 @@ void Scheduler::dispatchLoop() {
             bool is_recurring = task.interval.count() > 0;
 
             if (is_recurring) {
-                auto now = clock->now();
+                auto now = steady_clock::now();
                 auto seq = sequence_number.fetch_add(1, std::memory_order_relaxed);
                 recurring.push_back(Task{
                     task.job, // copy the callable
@@ -231,7 +229,7 @@ void Scheduler::dispatchLoop() {
 }
 
 void Scheduler::dispatchOne(Task task) {
-    auto start = clock->now();
+    auto start = steady_clock::now();
     statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::milliseconds>(start - task.enqueue_time).count());
     if (task.deadline && start > *task.deadline)
         missed_tasks.fetch_add(1, std::memory_order_relaxed);
@@ -254,7 +252,7 @@ uint64_t Scheduler::getMissedTasks() {
 uint64_t Scheduler::calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline) {
     priority = std::clamp(priority, 0, BASE_MAX);
 
-    if (deadline && (*deadline - clock->now() <= imminent_time)) return BASE_MAX + BOOST + priority;
+    if (deadline && (*deadline - steady_clock::now() <= imminent_time)) return BASE_MAX + BOOST + priority;
 
     return priority;
 }

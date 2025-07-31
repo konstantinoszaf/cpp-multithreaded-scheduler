@@ -11,7 +11,6 @@
 namespace scheduler {
 
 namespace detail {
-    class IClock;
     class ITaskQueue;
     class IThreadPool;
     class IStatisticsCalculator;
@@ -44,8 +43,7 @@ public:
 
     // Implementation details
 protected:
-    Scheduler(std::shared_ptr<detail::IClock> clock,
-        std::shared_ptr<detail::ITaskQueue> ready,
+    Scheduler(std::shared_ptr<detail::ITaskQueue> ready,
         std::shared_ptr<detail::ITaskQueue> scheduled,
         std::shared_ptr<detail::IThreadPool> thread_pool,
         std::shared_ptr<detail::IStatisticsCalculator> stats);
@@ -59,7 +57,6 @@ protected:
 private:
     void dispatchOne(detail::Task task);
     void promoteTasks();
-    std::shared_ptr<detail::IClock> clock;
     std::shared_ptr<detail::ITaskQueue> scheduled_tasks;
     std::shared_ptr<detail::ITaskQueue> recurring_tasks;
     std::shared_ptr<detail::IThreadPool> thread_pool;
