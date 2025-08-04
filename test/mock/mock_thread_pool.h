@@ -10,7 +10,7 @@ class MockThreadPool : public IThreadPool {
 public:
   MOCK_METHOD(void, start, (), (override));
   MOCK_METHOD(void, stop, (), (override));
-  MOCK_METHOD(bool, enqueue, (std::function<void()> job), (override));
+  MOCK_METHOD(bool, submit, (Task&& job), (override));
 };
 
 }  // namespace detail

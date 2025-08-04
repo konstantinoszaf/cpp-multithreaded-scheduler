@@ -2,10 +2,13 @@
 #include <functional>
 
 namespace scheduler::detail{
+
+struct Task;
+
 class IThreadPool {
 public:
     virtual ~IThreadPool() = default;
-    virtual bool enqueue(std::function<void()> job) = 0;
+    virtual bool submit(Task&& job) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
 };
