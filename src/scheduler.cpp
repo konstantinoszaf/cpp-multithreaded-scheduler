@@ -2,7 +2,6 @@
 #include "detail/thread_pool_impl.h"
 #include "detail/statistics_calculator_impl.h"
 #include "detail/task.h"
-#include "iostream"
 
 using namespace scheduler;
 using namespace detail;
@@ -72,11 +71,38 @@ void Scheduler::schedule(std::function<void()> job, int priority,
 }
 
 // Allow tasks that run repeatedly on an interval
-void Scheduler::scheduleRecurring(std::function<void()> job,
-                                    int priority,
-                                    milliseconds interval)
+void Scheduler::scheduleRecurring(std::function<void()> job, int priority,
+                                                            milliseconds interval)
 {
+    if (!job) return;
 
+    // schedule(job, priority, std::nullopt); // fire instantly once
+
+    auto now = steady_clock::now();
+    auto t = [this, job = std::move(job), enqueue_time = now, priority, interval]() mutable {
+            auto start = steady_clock::now();
+            statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::microseconds>(start - enqueue_time).count());
+
+            try {
+                job();
+                this->scheduleRecurring(job, priority, interval);
+            } catch(...)
+            { /* log */ }
+    };
+
+    auto seq = sequence_number.fetch_add(1, std::memory_order_acquire);
+
+    Task task{
+        std::move(t), //job
+        calculatePriority(priority, std::nullopt), //priority
+        seq, //sequence_number
+        now + interval, // scheduled_at
+        interval, // interval
+        now, //enqueue_time
+        std::nullopt, //deadline
+    };
+
+    thread_pool->submit(std::move(task));
 }
 
 std::tuple<double, double, double> Scheduler::getLatencyStatistics() const {

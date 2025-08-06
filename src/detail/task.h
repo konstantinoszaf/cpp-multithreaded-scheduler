@@ -17,7 +17,6 @@ struct Task {
     time_point enqueue_time;
     std::optional<time_point> deadline;
     uint64_t sequence_number;
-    std::shared_ptr<IStatisticsCalculator> statistics;
 
     Task() = default;
     Task(std::function<void()> f,
@@ -37,6 +36,8 @@ struct Task {
     {}
 
     bool operator<(Task const& other) const {
+        if (scheduled_at != other.scheduled_at)
+            return scheduled_at > other.scheduled_at;
         if (priority != other.priority)
             return priority < other.priority;
         return sequence_number > other.sequence_number;
@@ -47,6 +48,16 @@ struct Task {
             job();
         } catch(...)
         { /* log */ }
+    }
+
+    bool operator==(Task const& other) const {
+        return
+            priority         == other.priority &&
+            scheduled_at     == other.scheduled_at &&
+            interval         == other.interval &&
+            enqueue_time     == other.enqueue_time &&
+            deadline         == other.deadline &&
+            sequence_number  == other.sequence_number;
     }
 
 };

@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 
 namespace scheduler::queue {
 
@@ -37,32 +38,70 @@ public:
     }
 
     void wait_and_pop(T& value) {
-        std::unique_lock<std::mutex> lk(mtx);
-        data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
+        while (true) {
+            std::unique_lock<std::mutex> lk(mtx);
+            if (heap.empty() && shutdown_) return;
+    
+            if (heap.empty()) {
+                data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
+                continue;
+            }
 
-        if (heap.empty() && shutdown_) return;
+            auto &next = heap.front();
+            auto now = std::chrono::steady_clock::now();
 
-        std::pop_heap(heap.begin(), heap.end(), cmp);
-        value = std::move(heap.back());
-        heap.pop_back();
+            if (next.scheduled_at > now) {
+                data_cond.wait_until(lk, next.scheduled_at, [&] {
+                    return heap.front().scheduled_at < next.scheduled_at || shutdown_; }
+                );
+                continue;
+            }
+
+            std::pop_heap(heap.begin(), heap.end(), cmp);
+            value = std::move(heap.back());
+            heap.pop_back();
+        }
+
+        return;
     }
 
     std::shared_ptr<T> wait_and_pop() {
-        std::unique_lock<std::mutex> lk(mtx);
-        data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
+        while (true) {
+            std::unique_lock<std::mutex> lk(mtx);
+            if (heap.empty() && shutdown_) return std::shared_ptr<T>();
+    
+            if (heap.empty()) {
+                data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
+                continue;
+            }
 
-        if (heap.empty() && shutdown_) return std::shared_ptr<T>();
+            auto &next = heap.front();
+            auto now = std::chrono::steady_clock::now();
 
-        std::pop_heap(heap.begin(), heap.end(), cmp);
-        auto res {std::make_shared<T>(std::move(heap.back()))};
-        heap.pop_back();
-        return res;
+            if (next.scheduled_at > now) {
+                data_cond.wait_until(lk, next.scheduled_at, [&] {
+                    return heap.front().scheduled_at < next.scheduled_at || shutdown_; }
+                );
+                continue;
+            }
+
+            std::pop_heap(heap.begin(), heap.end(), cmp);
+            auto res {std::make_shared<T>(std::move(heap.back()))};
+            heap.pop_back();
+            return res;
+        }
+
+        return std::shared_ptr<T>();
     }
 
     bool try_pop(T& value) {
         std::lock_guard<std::mutex> lk(mtx);
 
         if (heap.empty()) return false;
+
+        auto &next = heap.front();
+        auto now = std::chrono::steady_clock::now();
+        if (next.scheduled_at > now) return false;
 
         std::pop_heap(heap.begin(), heap.end(), cmp);
         value = std::move(heap.back());
@@ -75,6 +114,10 @@ public:
         std::lock_guard<std::mutex> lk(mtx);
 
         if (heap.empty()) return std::shared_ptr<T>();
+
+        auto &next = heap.front();
+        auto now = std::chrono::steady_clock::now();
+        if (next.scheduled_at > now) return std::shared_ptr<T>();
 
         std::pop_heap(heap.begin(), heap.end(), cmp);
         auto res {std::make_shared<T>(std::move(heap.back()))};
@@ -95,6 +138,11 @@ public:
         }
 
         data_cond.notify_all();
+    }
+
+    size_t size() const {
+        std::lock_guard<std::mutex> lk(mtx);
+        return heap.size();
     }
 };
 } // namespace scheduler::detail

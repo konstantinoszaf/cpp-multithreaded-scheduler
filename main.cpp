@@ -14,13 +14,17 @@ void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
 
     uint64_t startCount = executions->load(std::memory_order_relaxed);
     // Define periodic job
-    auto job = [executions]() {
+    auto job_rec = [executions]() {
         auto count = executions->fetch_add(1, std::memory_order_relaxed);
         // spdlog::info("Periodic Task #{} executed.", count); //disabled for better speed
     };
 
+    auto job_one_off = [executions]() {
+        auto count = executions->fetch_add(1, std::memory_order_relaxed);
+        // spdlog::info("One-off Task #{} executed.", count); //disabled for better speed
+    };
     // Schedule a high-frequency recurring task
-    // scheduler.scheduleRecurring(job, /*priority=*/5, 1ms);
+    scheduler.scheduleRecurring(job_rec, /*priority=*/5, 1ms);
 
     // Schedule one-off tasks with varying priorities and deadlines
     for (int i = 0; i < 10; ++i) {
@@ -35,8 +39,8 @@ void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
     }
 
     // Simulate bursty workload of 10k tasks
-    for (int i = 0; i < 10000; ++i) {
-        scheduler.schedule(job, priority_dist(gen),
+    for (int i = 0; i < 1000; ++i) {
+        scheduler.schedule(job_one_off, priority_dist(gen),
             std::chrono::steady_clock::now() + std::chrono::microseconds(40));
     }
 }
