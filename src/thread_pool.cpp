@@ -1,4 +1,5 @@
 #include "detail/thread_pool_impl.h"
+#include "detail/task.h"
 
 using namespace scheduler::detail;
 
@@ -10,11 +11,8 @@ ThreadPool::~ThreadPool() {
 }
 
 void ThreadPool::start() {
-    {
-        std::lock_guard<std::mutex> lock{queue_mutex};
-        if (running) return;
-        running = true;
-    }
+    if (running.load(std::memory_order_acquire)) return;
+    running.store(true, std::memory_order_release);
 
     if (thread_num <= 0) thread_num = 1;
     threads.reserve(thread_num);
@@ -25,12 +23,10 @@ void ThreadPool::start() {
 }
 
 void ThreadPool::stop() {
-    {
-        std::unique_lock<std::mutex> lock{queue_mutex};
-        if (!running) return;
-        running = false;
-        cv.notify_all();
-    }
+    if (!running.load(std::memory_order_acquire)) return;
+    running.store(false, std::memory_order_release);
+
+    jobs.shutdown();
 
     for (std::thread& active_thread : threads) {
         active_thread.join();
@@ -38,33 +34,24 @@ void ThreadPool::stop() {
     threads.clear();
 }
 
-bool ThreadPool::enqueue(std::function<void()> job) {
-    std::lock_guard<std::mutex> lock{queue_mutex};
-    if (!running) return false;
-    jobs.emplace_back(std::move(job));
-    cv.notify_all();
+bool ThreadPool::submit(Task&& task) {
+    if (!running.load(std::memory_order_acquire)) return false;
+
+    jobs.push(std::move(task));
     return true;
 }
 
 void ThreadPool::workerLoop() {
-    while (true) {
-        std::function<void()> job;
-        {
-            std::unique_lock<std::mutex> lock{queue_mutex};
-            cv.wait(lock, [this]{ return !running || !jobs.empty(); });
+    while (running.load(std::memory_order_acquire) || !jobs.empty()) {
+        auto job = jobs.try_pop();
 
-            if (!running && jobs.empty()) break; // drain all jobs before exit
-
-            job = std::move(jobs.front());
-            jobs.pop_front();
-        }
+        if (!job) job = jobs.wait_and_pop();
 
         try {
-            job();
+            if (job) (*job)();
         } catch (...) {
             // ignore
         }
-
     }
 }
 

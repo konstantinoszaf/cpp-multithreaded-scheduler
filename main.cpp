@@ -14,13 +14,17 @@ void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
 
     uint64_t startCount = executions->load(std::memory_order_relaxed);
     // Define periodic job
-    auto job = [executions]() {
+    auto job_rec = [executions]() {
         auto count = executions->fetch_add(1, std::memory_order_relaxed);
         // spdlog::info("Periodic Task #{} executed.", count); //disabled for better speed
     };
 
+    auto job_one_off = [executions]() {
+        auto count = executions->fetch_add(1, std::memory_order_relaxed);
+        // spdlog::info("One-off Task #{} executed.", count); //disabled for better speed
+    };
     // Schedule a high-frequency recurring task
-    scheduler.scheduleRecurring(job, /*priority=*/5, 1ms);
+    scheduler.scheduleRecurring(job_rec, /*priority=*/5, 1ms);
 
     // Schedule one-off tasks with varying priorities and deadlines
     for (int i = 0; i < 10; ++i) {
@@ -30,14 +34,14 @@ void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
                 // spdlog::info("One-off task #{} with priority {} executed.", i, p); //disabled for better speed
             },
             p,
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(10 * i)
+            std::chrono::steady_clock::now() + std::chrono::microseconds(20 + i)
         );
     }
 
     // Simulate bursty workload of 10k tasks
-    for (int i = 0; i < 10000; ++i) {
-        scheduler.schedule(job, priority_dist(gen),
-            std::chrono::steady_clock::now() + 50ms);
+    for (int i = 0; i < 1000; ++i) {
+        scheduler.schedule(job_one_off, priority_dist(gen),
+            std::chrono::steady_clock::now() + std::chrono::microseconds(40));
     }
 }
 
@@ -59,7 +63,7 @@ void concurrencyTest(scheduler::Scheduler& scheduler,
                         executions->fetch_add(1, std::memory_order_relaxed);
                     },
                     /*priority=*/5,
-                    std::chrono::steady_clock::now() + std::chrono::milliseconds{40}
+                    std::chrono::steady_clock::now() + std::chrono::microseconds{40}
                 );
             }
         });
@@ -95,9 +99,9 @@ int main() {
     uint64_t missed = scheduler.getMissedTasks();
 
     spdlog::info("=== Scheduler Latency Results ===");
-    spdlog::info("Average Latency: {} ms", average);
-    spdlog::info("Minimum Latency: {} ms", minimum);
-    spdlog::info("Maximum Latency: {} ms", maximum);
+    spdlog::info("Average Latency: {} μs", average);
+    spdlog::info("Minimum Latency: {} μs", minimum);
+    spdlog::info("Maximum Latency: {} μs", maximum);
     spdlog::info("Missed tasks: {} out of {}", missed, executions->load());
 
     return 0;

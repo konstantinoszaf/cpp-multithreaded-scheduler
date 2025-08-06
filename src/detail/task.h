@@ -2,6 +2,8 @@
 #include <functional>
 #include <optional>
 #include <chrono>
+#include "detail/statistics_calculator.h"
+
 namespace scheduler::detail {
 
 using milliseconds = std::chrono::milliseconds;
@@ -32,6 +34,31 @@ struct Task {
       , deadline(dl)
       , sequence_number(seq)
     {}
+
+    bool operator<(Task const& other) const {
+        if (scheduled_at != other.scheduled_at)
+            return scheduled_at > other.scheduled_at;
+        if (priority != other.priority)
+            return priority < other.priority;
+        return sequence_number > other.sequence_number;
+    }
+
+    void operator()() const {
+        try {
+            job();
+        } catch(...)
+        { /* log */ }
+    }
+
+    bool operator==(Task const& other) const {
+        return
+            priority         == other.priority &&
+            scheduled_at     == other.scheduled_at &&
+            interval         == other.interval &&
+            enqueue_time     == other.enqueue_time &&
+            deadline         == other.deadline &&
+            sequence_number  == other.sequence_number;
+    }
 
 };
 } //namespace scheduler::detail

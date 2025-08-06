@@ -3,6 +3,7 @@
 #include <future>
 #include <gmock/gmock.h>
 #include "detail/thread_pool_impl.h"
+#include "detail/task.h"
 #include <latch>
 
 using ::testing::_;
@@ -10,152 +11,137 @@ using ::testing::Invoke;
 using ::testing::InvokeWithoutArgs;
 using namespace scheduler::detail;
 
-class ThreadPoolTest : public ::testing::Test
-{
+// Helper to build a Task from a simple lambda
+static Task makeTask(std::function<void()> f) {
+    auto now = std::chrono::steady_clock::now();
+    return Task{
+        std::move(f),                    // job
+        0u,                              // priority
+        0u,                              // sequence_number
+        now,                             // scheduled_at
+        std::chrono::milliseconds{0},    // interval
+        now,                             // enqueue_time
+        std::nullopt                     // no deadline
+    };
+}
+
+class ThreadPoolTest : public ::testing::Test {
 protected:
-    void SetUp() override
-    {
+    void SetUp() override {
         pool = std::make_unique<ThreadPool>(4);
         pool->start();
     }
-    void TearDown() override
-    {
+    void TearDown() override {
         pool->stop();
     }
 
     std::unique_ptr<ThreadPool> pool;
 };
 
-struct MockTask
-{
+struct MockTask {
     MOCK_METHOD(void, run, ());
 };
 
-TEST_F(ThreadPoolTest, MockCallbackSetsPromise)
-{
+TEST_F(ThreadPoolTest, MockCallbackSetsPromise) {
     std::promise<void> p;
     auto f = p.get_future();
 
     MockTask m;
     EXPECT_CALL(m, run())
-        // when run() is invoked, fulfill the promise
-        .WillOnce(InvokeWithoutArgs([&]
-                                    { p.set_value(); }));
+        .WillOnce(InvokeWithoutArgs([&]{ p.set_value(); }));
 
-    // enqueue a lambda that calls our mock
-    ASSERT_TRUE(pool->enqueue([&]
-                             { m.run(); }));
+    // now wrap it into a Task
+    ASSERT_TRUE(pool->submit(makeTask([&]{ m.run(); })));
 
-    // wait (up to 1s) for the callback to fire
     ASSERT_EQ(std::future_status::ready,
               f.wait_for(std::chrono::seconds(1)));
 }
 
-struct CounterMock
-{
-    MOCK_METHOD(void, inc, (std::atomic<int> &));
+struct CounterMock {
+    MOCK_METHOD(void, inc, (std::atomic<int>&));
 };
 
-TEST_F(ThreadPoolTest, MultipleMockTasksInvokeCallback)
-{
+TEST_F(ThreadPoolTest, MultipleMockTasksInvokeCallback) {
     CounterMock m;
     std::atomic<int> counter{0};
     constexpr int N = 10;
 
-    // Each call to inc(counter) will atomically ++counter
-    EXPECT_CALL(m, inc(::testing::_))
+    EXPECT_CALL(m, inc(_))
         .Times(N)
-        .WillRepeatedly(Invoke(
-            [&counter](std::atomic<int> &c)
-            { c.fetch_add(1, std::memory_order_relaxed); }));
+        .WillRepeatedly(Invoke([&counter](std::atomic<int>& c){
+            c.fetch_add(1, std::memory_order_relaxed);
+        }));
 
-    // enqueue N tasks that call m.inc(counter)
-    for (int i = 0; i < N; ++i)
-    {
-        ASSERT_TRUE(pool->enqueue([&]{ m.inc(counter); }));
+    for (int i = 0; i < N; ++i) {
+        ASSERT_TRUE(pool->submit(makeTask([&]{ m.inc(counter); })));
     }
 
     // Wait until counter == N
-    // Use a promise/future as a “gate”
     std::promise<void> allDone;
-    std::thread waiter([&]
-                       {
-    while (counter.load(std::memory_order_relaxed) < N) {}
-    allDone.set_value(); });
+    std::thread waiter([&]{
+        while (counter.load(std::memory_order_relaxed) < N) {}
+        allDone.set_value();
+    });
 
     ASSERT_EQ(std::future_status::ready,
               allDone.get_future().wait_for(std::chrono::seconds(1)));
     waiter.join();
 }
 
-struct ExceptionMock
-{
+struct ExceptionMock {
     MOCK_METHOD(void, boom, ());
     MOCK_METHOD(void, safe, ());
 };
 
-TEST_F(ThreadPoolTest, ExceptionInOneTaskDoesNotBlockOthers)
-{
+TEST_F(ThreadPoolTest, ExceptionInOneTaskDoesNotBlockOthers) {
     ExceptionMock m;
 
-    // First task throws
     EXPECT_CALL(m, boom())
         .WillOnce(InvokeWithoutArgs([]{ throw std::runtime_error("fail"); }));
 
-    // Second task should still run and fulfill the promise
     std::promise<void> p;
     EXPECT_CALL(m, safe())
         .WillOnce(InvokeWithoutArgs([&]{ p.set_value(); }));
 
-    ASSERT_TRUE(pool->enqueue([&]{ m.boom(); }));
-    ASSERT_TRUE(pool->enqueue([&]{ m.safe(); }));
+    ASSERT_TRUE(pool->submit(makeTask([&]{ m.boom(); })));
+    ASSERT_TRUE(pool->submit(makeTask([&]{ m.safe(); })));
 
     ASSERT_EQ(std::future_status::ready,
               p.get_future().wait_for(std::chrono::seconds(1)));
 }
 
-struct NeverCalledMock
-{
+struct NeverCalledMock {
     MOCK_METHOD(void, shouldNotRun, ());
 };
 
-TEST_F(ThreadPoolTest, NoTasksRunAfterStop)
-{
+TEST_F(ThreadPoolTest, NoTasksRunAfterStop) {
     NeverCalledMock m;
     EXPECT_CALL(m, shouldNotRun()).Times(0);
 
     pool->stop();
-    // enqueue returns false, so mock is never invoked
-    EXPECT_FALSE(pool->enqueue([&]{ m.shouldNotRun(); }));
+    EXPECT_FALSE(pool->submit(makeTask([&]{ m.shouldNotRun(); })));
 }
 
-struct DrainMock
-{
+struct DrainMock {
     MOCK_METHOD(void, run, ());
 };
 
-TEST_F(ThreadPoolTest, PendingTasksDrainedOnShutdown)
-{
+TEST_F(ThreadPoolTest, PendingTasksDrainedOnShutdown) {
     DrainMock m;
     constexpr int N = 5;
 
-    // Expect run() N times, since we drain everything
     EXPECT_CALL(m, run()).Times(N);
 
-    // Block tasks on a latch
     std::latch start{1}, done{N};
-    for (int i = 0; i < N; ++i)
-    {
-        ASSERT_TRUE(pool->enqueue([&] {
+    for (int i = 0; i < N; ++i) {
+        ASSERT_TRUE(pool->submit(makeTask([&]{
             start.wait();
             m.run();
-            done.count_down(); }));
+            done.count_down();
+        })));
     }
 
-    // Let them go and then stop (which will wait for them)
     start.count_down();
     pool->stop();
-
-    // Wait for all of them to finish
     done.wait();
 }
