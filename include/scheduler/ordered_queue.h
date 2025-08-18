@@ -65,10 +65,10 @@ public:
         return;
     }
 
-    std::shared_ptr<T> wait_and_pop() {
+    T wait_and_pop() {
         while (true) {
             std::unique_lock<std::mutex> lk(mtx);
-            if (heap.empty() && shutdown_) return std::shared_ptr<T>();
+            if (heap.empty() && shutdown_) return {};
     
             if (heap.empty()) {
                 data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
@@ -86,12 +86,12 @@ public:
             }
 
             std::pop_heap(heap.begin(), heap.end(), cmp);
-            auto res {std::make_shared<T>(std::move(heap.back()))};
+            auto res {std::move(heap.back())};
             heap.pop_back();
             return res;
         }
 
-        return std::shared_ptr<T>();
+        return {};
     }
 
     bool try_pop(T& value) {
@@ -110,17 +110,17 @@ public:
         return true;
     }
 
-    std::shared_ptr<T> try_pop() {
+    std::optional<T> try_pop() {
         std::lock_guard<std::mutex> lk(mtx);
 
-        if (heap.empty()) return std::shared_ptr<T>();
+        if (heap.empty()) return std::nullopt;
 
         auto &next = heap.front();
         auto now = std::chrono::steady_clock::now();
-        if (next.scheduled_at > now) return std::shared_ptr<T>();
+        if (next.scheduled_at > now) return std::nullopt;
 
         std::pop_heap(heap.begin(), heap.end(), cmp);
-        auto res {std::make_shared<T>(std::move(heap.back()))};
+        auto res {std::move(heap.back())};
         heap.pop_back();
 
         return res;

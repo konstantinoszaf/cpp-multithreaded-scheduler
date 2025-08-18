@@ -35,9 +35,9 @@ TEST(OrderedQueue, InsertArecurringTask) {
 
     q.push(t);
 
-    auto rsp = q.try_pop();
+    std::optional<Task> rsp = q.try_pop();
 
-    EXPECT_EQ(rsp, nullptr);
+    EXPECT_EQ(rsp, std::nullopt);
 
     rsp = q.wait_and_pop();
 
@@ -113,6 +113,6 @@ TEST(OrderedQueue, TestQueueShorting) {
     auto r3 = q.wait_and_pop();
     auto r4 = q.wait_and_pop();
 
-    EXPECT_EQ(t3, *r3);
-    EXPECT_EQ(t4, *r4);
+    EXPECT_EQ(t3, r3);
+    EXPECT_EQ(t4, r4);
 }

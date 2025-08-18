@@ -45,7 +45,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
     auto now = steady_clock::now();
     auto t = [this, job = std::move(job), enqueue_time = now, deadline]() mutable {
             auto start = steady_clock::now();
-            statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::microseconds>(start - enqueue_time).count());
+            statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::nanoseconds>(start - enqueue_time).count());
             if (deadline && start > *deadline)
                 missed_tasks.fetch_add(1, std::memory_order_relaxed);
 
@@ -59,7 +59,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
 
     Task task{
         std::move(t), //job
-        calculatePriority(priority, deadline), //priority
+        calculatePriority(priority, deadline, now), //priority
         seq, //sequence_number
         now, // scheduled_at
         std::chrono::milliseconds{0}, // interval
@@ -76,12 +76,10 @@ void Scheduler::scheduleRecurring(std::function<void()> job, int priority,
 {
     if (!job) return;
 
-    // schedule(job, priority, std::nullopt); // fire instantly once
-
     auto now = steady_clock::now();
     auto t = [this, job = std::move(job), enqueue_time = now, priority, interval]() mutable {
             auto start = steady_clock::now();
-            statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::microseconds>(start - enqueue_time).count());
+            statistics->updateLatencyStatistics(std::chrono::duration_cast<std::chrono::nanoseconds>(start - enqueue_time).count());
 
             try {
                 job();
@@ -94,7 +92,7 @@ void Scheduler::scheduleRecurring(std::function<void()> job, int priority,
 
     Task task{
         std::move(t), //job
-        calculatePriority(priority, std::nullopt), //priority
+        calculatePriority(priority, std::nullopt, now), //priority
         seq, //sequence_number
         now + interval, // scheduled_at
         interval, // interval
@@ -114,10 +112,12 @@ uint64_t Scheduler::getMissedTasks() {
 }
 
 // this is a static way of handling tasks that are in danger of reaching their deadline.
-uint64_t Scheduler::calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline) {
+uint64_t Scheduler::calculatePriority(int priority,
+    std::optional<std::chrono::steady_clock::time_point> deadline, steady_clock::time_point now)
+{
     priority = std::clamp(priority, 0, BASE_MAX);
 
-    if (deadline && (*deadline - steady_clock::now() <= imminent_time)) return BASE_MAX + BOOST + priority;
+    if (deadline && (*deadline - now <= imminent_time)) return BASE_MAX + BOOST + priority;
 
     return priority;
 }

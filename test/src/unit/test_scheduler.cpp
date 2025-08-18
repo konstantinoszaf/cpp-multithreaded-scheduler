@@ -60,28 +60,17 @@ TEST_F(TestScheduler, EnqueueOneOffTaskPushesReadyQueue) {
     sched->schedule([](){}, 5, std::nullopt);
 }
 
-// TEST_F(TestScheduler, RecurringTaskPushesReadyOnce) {
-//     EXPECT_CALL(*rawThreadPool, stop).Times(::testing::AtLeast(1));
-//     sched->scheduleRecurring([](){}, 1, std::chrono::milliseconds{100});
-// }
-
-// TEST_F(TestScheduler, DispatchLoopSchedulesRecurringTask) {
-
-//     EXPECT_CALL(*rawThreadPool, stop).Times(::testing::AtLeast(1));
-//     // We expect dispatch to call thread_pool.enqueue once
-
-// }
-
 TEST_F(TestScheduler, BoostsWhenDeadlineIsImminent) {
     using namespace std::chrono;
 
     // Arrange
     // priority to test and a deadline exactly at the imminent_time threshold (10ms)
     const int priority = 50;
+    const auto now = std::chrono::steady_clock::now();
     const auto deadline = std::chrono::steady_clock::now() + microseconds{10};
 
     // Act
-    uint64_t result = sched->calculatePriority(priority, deadline);
+    uint64_t result = sched->calculatePriority(priority, deadline, now);
 
     // Assert
     // BASE_MAX = 100, BOOST = 1000, so we expect 100 + 1000 + 50 = 1150
@@ -94,10 +83,11 @@ TEST_F(TestScheduler, DoesNotBoostsWhenDeadlineIsImminent) {
     // Arrange
     // priority to test and a deadline exactly at the imminent_time threshold (10ms)
     const int priority = 50;
-    const auto deadline = std::chrono::steady_clock::now() + microseconds{1000};
+    const auto now = std::chrono::steady_clock::now();
+    const auto deadline = now + microseconds{1000};
 
     // Act
-    uint64_t result = sched->calculatePriority(priority, deadline);
+    uint64_t result = sched->calculatePriority(priority, deadline, now);
 
     // Assert
     // BASE_MAX = 100, BOOST = 1000, so we expect 100 + 1000 + 50 = 1150

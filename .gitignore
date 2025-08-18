@@ -45,3 +45,7 @@ build/
 
 # debug information files
 *.dwo
+
+# profiling
+perf
+perf.*
