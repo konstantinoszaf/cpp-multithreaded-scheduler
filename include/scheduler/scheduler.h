@@ -45,7 +45,8 @@ public:
 protected:
     Scheduler(std::unique_ptr<detail::IThreadPool> thread_pool,
         std::unique_ptr<detail::IStatisticsCalculator> stats);
-    uint64_t calculatePriority(int priority, std::optional<std::chrono::steady_clock::time_point> deadline);
+    uint64_t calculatePriority(int priority,
+        std::optional<std::chrono::steady_clock::time_point> deadline, std::chrono::steady_clock::time_point now);
 
 private:
     std::unique_ptr<detail::IThreadPool> thread_pool;

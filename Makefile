@@ -43,4 +43,6 @@ run-tests:
 test: build-tests run-tests
 
 clean:
-	@rm -rf $(BUILD_DIR)
+	-@rm -rf $(BUILD_DIR)
+	-@rm *.out
+	-@rm perf.*
