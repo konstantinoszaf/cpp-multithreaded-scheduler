@@ -1,6 +1,6 @@
 # C++ multi-threaded Task Scheduler
 Multi-Threaded Task Scheduling.
-The scheduler achieves an average task‐dispatch latency of approximately **8–9 microseconds** under heavy concurrent load.
+The scheduler achieves an average task‐dispatch latency of approximately **8 microseconds** under heavy concurrent load.
 
 A multi-threaded task scheduler with support for:
 
@@ -62,12 +62,12 @@ make test
 Sample output of main executable:
 
 ```
-[2025-08-06 18:45:26.803] [info] Concurrency test: expected 8000 tasks, actually ran 8000
-[2025-08-06 18:45:28.821] [info] === Scheduler Latency Results ===
-[2025-08-06 18:45:28.821] [info] Average Latency: 8.727746947835739 μs
-[2025-08-06 18:45:28.821] [info] Minimum Latency: 0 μs
-[2025-08-06 18:45:28.821] [info] Maximum Latency: 350 μs
-[2025-08-06 18:45:28.821] [info] Missed tasks: 120 out of 9000
+[2025-08-18 16:10:36.967] [info] Concurrency test: expected 800000 tasks, actually ran 800000
+[2025-08-18 16:10:36.967] [info] === Scheduler Latency Results ===
+[2025-08-18 16:10:36.967] [info] Average Latency: 8158.18755071722 ns
+[2025-08-18 16:10:36.967] [info] Minimum Latency: 92 ns
+[2025-08-18 16:10:36.967] [info] Maximum Latency: 309100 ns
+[2025-08-18 16:10:36.967] [info] Missed tasks: 4225 out of 801000
 ```
 
 ---
