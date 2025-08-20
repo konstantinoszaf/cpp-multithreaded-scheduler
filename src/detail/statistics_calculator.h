@@ -7,6 +7,8 @@ class IStatisticsCalculator {
 public:
     virtual ~IStatisticsCalculator() = default;
     virtual std::tuple<double, double, double> getLatencyStatistics() const = 0;
+    virtual std::tuple<double, double, double> getPvalues() = 0;
     virtual void updateLatencyStatistics(std::int64_t latency) = 0;
+    virtual void flushThreadLocal() = 0;
 };
 } // namespace scheduler::detail

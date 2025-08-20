@@ -39,6 +39,7 @@ public:
     // Performance metrics
     // Returns average, min, max latency so far
     std::tuple<double, double, double> getLatencyStatistics() const;
+    std::tuple<double, double, double> getPvalueStatistics() const;
     uint64_t getMissedTasks();
 
     // Implementation details
