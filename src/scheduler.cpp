@@ -35,6 +35,7 @@ Scheduler::Scheduler(std::unique_ptr<detail::IThreadPool> pool_,
 Scheduler::~Scheduler()
 {
     thread_pool->stop();
+    statistics->flushThreadLocal();
 }
 
 void Scheduler::schedule(std::function<void()> job, int priority,
@@ -105,6 +106,10 @@ void Scheduler::scheduleRecurring(std::function<void()> job, int priority,
 
 std::tuple<double, double, double> Scheduler::getLatencyStatistics() const {
     return statistics->getLatencyStatistics();
+}
+
+std::tuple<double, double, double> Scheduler::getPvalueStatistics() const {
+    return statistics->getPvalues();
 }
 
 uint64_t Scheduler::getMissedTasks() {

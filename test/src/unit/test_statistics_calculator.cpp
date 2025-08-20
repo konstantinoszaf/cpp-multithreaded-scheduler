@@ -38,3 +38,16 @@ TEST(StatisticsCalculator, MultipleSamples) {
     EXPECT_DOUBLE_EQ(mn, 50.0);
     EXPECT_DOUBLE_EQ(mx, 200.0);
 }
+
+TEST(StatisticsCalculator, TestPercentileCalculation) {
+    StatisticsCalculator stats;
+    for (int i = 0; i <= 1000; i++) {
+        stats.updateLatencyStatistics(i);
+    }
+
+    auto [p95, p99, p999] = stats.getPvalues();
+
+    EXPECT_EQ(p95, 950);
+    EXPECT_EQ(p99, 990);
+    EXPECT_EQ(p999, 999);
+}

@@ -24,7 +24,6 @@ void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
         // spdlog::info("One-off Task #{} executed.", count); //disabled for better speed
     };
     // Schedule a high-frequency recurring task
-    // scheduler.scheduleRecurring(job_rec, /*priority=*/5, 1ms);
 
     // Schedule one-off tasks with varying priorities and deadlines
     for (int i = 0; i < 10; ++i) {
@@ -90,13 +89,9 @@ int main() {
     auto executions = std::make_shared<std::atomic<uint64_t>>(0);
 
     runBasicSchedulingTests(scheduler, executions);
-    // concurrencyTest(scheduler, executions, /*numProducers=*/1, /*tasksPerProducer=*/2000);
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    concurrencyTest(scheduler, executions, /*numProducers=*/8, /*tasksPerProducer=*/100000);
-
-    // Allow tasks to execute for a fixed duration
-    std::this_thread::sleep_for(20s);
+    concurrencyTest(scheduler, executions, /*numProducers=*/8, /*tasksPerProducer=*/200000);
 
     auto [average, minimum, maximum] = scheduler.getLatencyStatistics();
     uint64_t missed = scheduler.getMissedTasks();
@@ -106,6 +101,16 @@ int main() {
     spdlog::info("Minimum Latency: {} ns", minimum);
     spdlog::info("Maximum Latency: {} ns", maximum);
     spdlog::info("Missed tasks: {} out of {}", missed, executions->load());
+
+    auto [p95, p99, p999] = scheduler.getPvalueStatistics();
+
+    spdlog::info("=== Scheduler Percentile Results ===");
+    spdlog::info("P95: {} ns", p95);
+    spdlog::info("P99: {} ns", p99);
+    spdlog::info("P999: {} ns", p999);
+
+    scheduler.scheduleRecurring([](){spdlog::info("Periodic Task executed.");}, /*priority=*/5, 100ms);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     return 0;
 }
