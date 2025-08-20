@@ -68,6 +68,10 @@ Sample output of main executable:
 [2025-08-18 16:10:36.967] [info] Minimum Latency: 92 ns
 [2025-08-18 16:10:36.967] [info] Maximum Latency: 309100 ns
 [2025-08-18 16:10:36.967] [info] Missed tasks: 4225 out of 801000
+[2025-08-20 18:12:29.604] [info] === Scheduler Percentile Results ===
+[2025-08-20 18:12:29.604] [info] P95: 19158 ns
+[2025-08-20 18:12:29.604] [info] P99: 31442 ns
+[2025-08-20 18:12:29.604] [info] P999: 77458 ns
 ```
 
 ---
@@ -83,7 +87,7 @@ int main() {
   scheduler::Scheduler sched{4};
   sched.schedule([]{/*...*/}, /*priority=*/10);
   sched.scheduleRecurring([]{/*...*/}, /*priority=*/5, std::chrono::milliseconds(100));
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+
   auto [avg, min, max] = sched.getLatencyStatistics();
 }
 ```
