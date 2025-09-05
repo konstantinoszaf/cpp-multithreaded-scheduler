@@ -21,7 +21,8 @@ static Task makeTask(std::function<void()> f) {
         now,                             // scheduled_at
         std::chrono::milliseconds{0},    // interval
         now,                             // enqueue_time
-        std::nullopt                     // no deadline
+        std::nullopt,                    // no deadline
+        false                            // not recurring
     };
 }
 

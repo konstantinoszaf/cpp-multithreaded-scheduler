@@ -66,6 +66,7 @@ void Scheduler::schedule(std::function<void()> job, int priority,
         std::chrono::milliseconds{0}, // interval
         now, //enqueue_time
         deadline, //deadline
+        false, // recurring
     };
 
     thread_pool->submit(std::move(task));
@@ -99,6 +100,7 @@ void Scheduler::scheduleRecurring(std::function<void()> job, int priority,
         interval, // interval
         now, //enqueue_time
         std::nullopt, //deadline
+        true, // recurring
     };
 
     thread_pool->submit(std::move(task));

@@ -33,23 +33,24 @@ public:
         data_cond.notify_one();
     }
 
-    void wait_and_pop(T& value) {
+    bool wait_and_pop(T& value) {
         std::unique_lock<std::mutex> lk(mtx);
         data_cond.wait(lk, [this] { return !queue.empty() || shutdown_; });
 
-        if (queue.empty() && shutdown_) return;
+        if (queue.empty() && shutdown_) return false;
 
-        value = queue.front();
+        value = std::move(queue.front());
         queue.pop();
+        return true;
     }
 
-    std::shared_ptr<T> wait_and_pop() {
+    std::optional<T> wait_and_pop() {
         std::unique_lock<std::mutex> lk(mtx);
         data_cond.wait(lk, [this] { return !queue.empty() || shutdown_; });
 
-        if (queue.empty() && shutdown_) return std::shared_ptr<T>();
+        if (queue.empty() && shutdown_) return std::nullopt;
 
-        auto res {std::make_shared<T>(queue.front())};
+        std::optional<T> res{std::in_place, std::move(queue.front())};
         queue.pop();
 
         return res;
@@ -60,18 +61,18 @@ public:
 
         if (queue.empty()) return false;
 
-        value = queue.front();
+        value = std::move(queue.front());
         queue.pop();
 
         return true;
     }
 
-    std::shared_ptr<T> try_pop() {
+    std::optional<T> try_pop() {
         std::lock_guard<std::mutex> lk(mtx);
 
-        if (queue.empty()) return std::shared_ptr<T>();
+        if (queue.empty()) return std::nullopt;
 
-        auto res {std::make_shared<T>(queue.front())};
+        std::optional<T> res{std::in_place, std::move(queue.front())};
         queue.pop();
 
         return res;

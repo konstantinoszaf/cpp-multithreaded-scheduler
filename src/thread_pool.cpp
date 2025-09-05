@@ -20,37 +20,48 @@ void ThreadPool::start() {
     for (size_t i = 0; i < thread_num; ++i) {
         threads.emplace_back([this]{ this->workerLoop(); });
     }
+
+    recurring = std::thread(&ThreadPool::promote_tasks, this);
 }
 
 void ThreadPool::stop() {
     if (!running.load(std::memory_order_acquire)) return;
     running.store(false, std::memory_order_release);
 
-    jobs.shutdown();
+    scheduled.shutdown();
+    ready.shutdown();
+
+    recurring.join();
 
     for (std::thread& active_thread : threads) {
         active_thread.join();
     }
+
     threads.clear();
+}
+
+void ThreadPool::promote_tasks() {
+    while (running.load(std::memory_order_acquire) || !scheduled.empty()) {
+        auto job = scheduled.wait_and_pop();
+        ready.push(std::move(job));
+    }
 }
 
 bool ThreadPool::submit(Task&& task) {
     if (!running.load(std::memory_order_acquire)) return false;
 
-    jobs.push(std::move(task));
+    if (task.recurring) scheduled.push(task);
+    else                ready.push(std::move(task));
     return true;
 }
 
 void ThreadPool::workerLoop() {
-    while (running.load(std::memory_order_acquire) || !jobs.empty()) {
-        auto job = jobs.try_pop();
+    Task t;
+    while (running.load(std::memory_order_acquire) || !ready.empty()) {
+        while (auto j = ready.try_pop()) { try { (*j)(); } catch (...) {} }
 
-        if (!job) job = jobs.wait_and_pop();
-
-        try {
-            if (job) (*job)();
-        } catch (...) {
-            // ignore
+        if (auto j = ready.wait_and_pop()) [[likely]] {
+            try { (*j)(); } catch (...) {}
         }
     }
 }

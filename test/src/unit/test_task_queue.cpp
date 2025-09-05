@@ -31,6 +31,7 @@ TEST(OrderedQueue, InsertArecurringTask) {
         milliseconds{10}, // interval
         now, //enqueue_time
         std::nullopt, //deadline
+        false //recurring
     };
 
     q.push(t);
@@ -55,6 +56,7 @@ TEST(OrderedQueue, TestQueueShorting) {
         milliseconds{0}, // interval
         now, //enqueue_time
         std::nullopt, //deadline
+        false //recurring
     };
 
     Task t2 {
@@ -65,6 +67,7 @@ TEST(OrderedQueue, TestQueueShorting) {
         milliseconds{0}, // interval
         now, //enqueue_time
         now + milliseconds{9}, //deadline
+        false //recurring
     };
 
     Task t3 {
@@ -75,6 +78,7 @@ TEST(OrderedQueue, TestQueueShorting) {
         milliseconds{10}, // interval
         now, //enqueue_time
         std::nullopt, //deadline
+        false //recurring
     };
 
     Task t4 {
@@ -85,6 +89,7 @@ TEST(OrderedQueue, TestQueueShorting) {
         milliseconds{11}, // interval
         now, //enqueue_time
         std::nullopt, //deadline
+        false //recurring
     };
 
     EXPECT_EQ(q.size(), 0);
