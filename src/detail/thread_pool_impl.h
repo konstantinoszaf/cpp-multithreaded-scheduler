@@ -1,5 +1,6 @@
 #include "detail/thread_pool.h"
 #include "scheduler/ordered_queue.h"
+#include "scheduler/unordered_queue.h"
 #include <thread>
 #include <vector>
 #include <queue>
@@ -21,12 +22,15 @@ public:
     size_t threadCount() const noexcept;
 private:
     void workerLoop();
+    void promote_tasks();
 
     std::vector<std::thread> threads;
-    scheduler::queue::OrderedQueue<Task, std::less<Task>> jobs;
+    scheduler::queue::OrderedQueue<Task, std::less<Task>> scheduled;
+    scheduler::queue::UnorderedQueue<Task> ready;
     std::mutex queue_mutex;
     std::condition_variable cv;
     std::atomic<bool> running;
     size_t thread_num;
+    std::thread recurring;
 };
 } // namespace scheduler::detail

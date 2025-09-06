@@ -17,6 +17,7 @@ struct Task {
     time_point enqueue_time;
     std::optional<time_point> deadline;
     uint64_t sequence_number;
+    bool recurring;
 
     Task() = default;
     Task(std::function<void()> f,
@@ -25,7 +26,8 @@ struct Task {
          time_point scheduled,
          milliseconds intrvl,
          time_point enqueue,
-         std::optional<time_point> dl)
+         std::optional<time_point> dl,
+         bool rec)
       : job(std::move(f))
       , priority(prio)
       , scheduled_at(scheduled)
@@ -33,6 +35,7 @@ struct Task {
       , enqueue_time(enqueue)
       , deadline(dl)
       , sequence_number(seq)
+      , recurring(rec)
     {}
 
     bool operator<(Task const& other) const {
