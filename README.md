@@ -62,16 +62,12 @@ make test
 Sample output of main executable:
 
 ```
-[2025-08-18 16:10:36.967] [info] Concurrency test: expected 800000 tasks, actually ran 800000
-[2025-08-18 16:10:36.967] [info] === Scheduler Latency Results ===
-[2025-08-18 16:10:36.967] [info] Average Latency: 8158.18755071722 ns
-[2025-08-18 16:10:36.967] [info] Minimum Latency: 92 ns
-[2025-08-18 16:10:36.967] [info] Maximum Latency: 309100 ns
-[2025-08-18 16:10:36.967] [info] Missed tasks: 4225 out of 801000
-[2025-08-20 18:12:29.604] [info] === Scheduler Percentile Results ===
-[2025-08-20 18:12:29.604] [info] P95: 19158 ns
-[2025-08-20 18:12:29.604] [info] P99: 31442 ns
-[2025-08-20 18:12:29.604] [info] P999: 77458 ns
+[2025-09-07 17:39:37.289] [info] === Throughput ===
+[2025-09-07 17:39:37.289] [info] Submitted: 1600000 tasks in 0.669s, 2390126 tasks/s
+[2025-09-07 17:39:37.347] [info] === Latency ===
+[2025-09-07 17:39:37.347] [info] avg=247330.287605 ns min=183 ns max=8747658 ns
+[2025-09-07 17:39:37.347] [info] p95=731302.3499999873 ns p99=7093292.039999989 ns p999=8364804.538000029 ns
+[2025-09-07 17:39:37.347] [info] missed deadlines: 59409 / 1600000
 ```
 
 ---
