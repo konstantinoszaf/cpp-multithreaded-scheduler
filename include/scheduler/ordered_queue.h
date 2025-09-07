@@ -26,12 +26,11 @@ public:
         shutdown_ = other.shutdown_;
     }
 
-    template<class U>
-    void push(U&& new_value) {
+    void push(T&& t) {
         {
             std::lock_guard<std::mutex> lk(mtx);
             if (shutdown_) return;
-            heap.push_back(std::forward<U>(new_value));
+            heap.emplace_back(std::move(t));
             std::push_heap(heap.begin(), heap.end(), cmp);
         }
         data_cond.notify_one();

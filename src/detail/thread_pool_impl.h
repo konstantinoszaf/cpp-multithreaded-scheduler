@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <memory>
 
 namespace scheduler::detail {
 
@@ -21,12 +22,12 @@ public:
     void stop() override;
     size_t threadCount() const noexcept;
 private:
-    void workerLoop();
+    void workerLoop(size_t index);
     void promote_tasks();
 
     std::vector<std::thread> threads;
     scheduler::queue::OrderedQueue<Task, std::less<Task>> scheduled;
-    scheduler::queue::UnorderedQueue<Task> ready;
+    std::vector<std::unique_ptr<scheduler::queue::UnorderedQueue<Task>>> ready_queues;
     std::mutex queue_mutex;
     std::condition_variable cv;
     std::atomic<bool> running;

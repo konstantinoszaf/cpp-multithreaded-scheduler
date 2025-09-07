@@ -1,116 +1,62 @@
 #include "scheduler/scheduler.h"
+#include <atomic>
 #include <chrono>
+#include <latch>
 #include <random>
 #include <thread>
-#include <atomic>
+#include <vector>
 #include <spdlog/spdlog.h>
 
-void runBasicSchedulingTests(scheduler::Scheduler& scheduler,
-                              std::shared_ptr<std::atomic<uint64_t>> executions) {
-    using namespace std::chrono_literals;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> priority_dist(1, 100);
+using steady_clock = std::chrono::steady_clock;
 
-    uint64_t startCount = executions->load(std::memory_order_relaxed);
-    // Define periodic job
-    auto job_rec = [executions]() {
-        auto count = executions->fetch_add(1, std::memory_order_relaxed);
-        // spdlog::info("Periodic Task #{} executed.", count); //disabled for better speed
-    };
+int main() {
+    const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
+    scheduler::Scheduler scheduler{threads};
 
-    auto job_one_off = [executions]() {
-        auto count = executions->fetch_add(1, std::memory_order_relaxed);
-        // spdlog::info("One-off Task #{} executed.", count); //disabled for better speed
-    };
-    // Schedule a high-frequency recurring task
+    // Benchmark parameters
+    const int producers = 8;
+    const int tasks_per_producer = 200'000;
+    const uint64_t total_tasks = uint64_t(producers) * tasks_per_producer;
 
-    // Schedule one-off tasks with varying priorities and deadlines
-    for (int i = 0; i < 10; ++i) {
-        int p = priority_dist(gen);
-        scheduler.schedule(
-            [i, p]() {
-                // spdlog::info("One-off task #{} with priority {} executed.", i, p); //disabled for better speed
-            },
-            p,
-            std::chrono::steady_clock::now() + std::chrono::microseconds(20 + i)
-        );
-    }
+    // Count completions with a latch
+    std::latch done(total_tasks);
 
-    // Simulate bursty workload of 10k tasks
-    for (int i = 0; i < 1000; ++i) {
-        scheduler.schedule(job_one_off, priority_dist(gen),
-            std::chrono::steady_clock::now() + std::chrono::microseconds(40));
-    }
-}
+    // ---- Submit phase (measure enqueue throughput) ----
+    auto t_submit_start = steady_clock::now();
 
-// Helper to test concurrency safety: multiple threads scheduling tasks
-void concurrencyTest(scheduler::Scheduler& scheduler,
-                     std::shared_ptr<std::atomic<uint64_t>> executions,
-                     int numProducers,
-                     int tasksPerProducer) {
-    // Capture starting execution count to measure only this phase
-    uint64_t startCount = executions->load(std::memory_order_relaxed);
-
-    std::vector<std::thread> producers;
-    producers.reserve(numProducers);
-    for (int t = 0; t < numProducers; ++t) {
-        producers.emplace_back([&, t]() {
-            for (int i = 0; i < tasksPerProducer; ++i) {
-                scheduler.schedule(
-                    [executions]() {
-                        executions->fetch_add(1, std::memory_order_relaxed);
-                    },
-                    /*priority=*/5,
-                    std::chrono::steady_clock::now() + std::chrono::microseconds{40}
-                );
+    std::vector<std::thread> ps;
+    ps.reserve(producers);
+    for (int p = 0; p < producers; ++p) {
+        ps.emplace_back([&]() {
+            for (int i = 0; i < tasks_per_producer; ++i) {
+                scheduler.schedule([&done]() noexcept { done.count_down(); },
+                                   5, steady_clock::now() + std::chrono::milliseconds(2));
             }
         });
     }
-    for (auto &th : producers) {
-        th.join();
-    }
+    for (auto& th : ps) th.join();
 
-    // Allow scheduler to process all submitted tasks
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    auto t_submit_end = steady_clock::now();
 
-    uint64_t expected = uint64_t(numProducers) * tasksPerProducer;
-    uint64_t actual = executions->load(std::memory_order_relaxed) - startCount;
-    spdlog::info("Concurrency test: expected {} tasks, actually ran {}", expected, actual);
-}
+    done.wait(); // block until every task has executed
 
+    // ---- Report ----
+    const double submit_secs =
+        std::chrono::duration<double>(t_submit_end - t_submit_start).count();
 
-int main() {
-    using namespace std::chrono_literals;
+    spdlog::set_level(spdlog::level::info);
+    spdlog::info("=== Throughput ===");
+    spdlog::info("Submitted: {} tasks in {:.3f}s, {:.0f} tasks/s",
+                 total_tasks, submit_secs, total_tasks / submit_secs);
 
-    scheduler::Scheduler scheduler{std::thread::hardware_concurrency()};
+    auto [avg, minv, maxv] = scheduler.getLatencyStatistics();
+    auto [p95, p99, p999]  = scheduler.getPvalueStatistics();
+    uint64_t missed        = scheduler.getMissedTasks();
 
-    // Atomic counter for executed tasks
-    auto executions = std::make_shared<std::atomic<uint64_t>>(0);
-
-    runBasicSchedulingTests(scheduler, executions);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-    concurrencyTest(scheduler, executions, /*numProducers=*/8, /*tasksPerProducer=*/200000);
-
-    auto [average, minimum, maximum] = scheduler.getLatencyStatistics();
-    uint64_t missed = scheduler.getMissedTasks();
-
-    spdlog::info("=== Scheduler Latency Results ===");
-    spdlog::info("Average Latency: {} ns", average);
-    spdlog::info("Minimum Latency: {} ns", minimum);
-    spdlog::info("Maximum Latency: {} ns", maximum);
-    spdlog::info("Missed tasks: {} out of {}", missed, executions->load());
-
-    auto [p95, p99, p999] = scheduler.getPvalueStatistics();
-
-    spdlog::info("=== Scheduler Percentile Results ===");
-    spdlog::info("P95: {} ns", p95);
-    spdlog::info("P99: {} ns", p99);
-    spdlog::info("P999: {} ns", p999);
-
-    scheduler.scheduleRecurring([](){spdlog::info("Periodic Task executed.");}, /*priority=*/5, 100ms);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    spdlog::info("=== Latency ===");
+    spdlog::info("avg={} ns min={} ns max={} ns", avg, minv, maxv);
+    spdlog::info("p95={} ns p99={} ns p999={} ns", p95, p99, p999);
+    spdlog::info("missed deadlines: {} / {}", missed, total_tasks);
 
     return 0;
 }

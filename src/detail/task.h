@@ -20,6 +20,11 @@ struct Task {
     bool recurring;
 
     Task() = default;
+    Task(Task&&) noexcept = default;
+    Task& operator=(Task&&) noexcept = default;
+    Task(const Task&) = delete;
+    Task& operator=(const Task&) = delete;
+
     Task(std::function<void()> f,
          uint64_t prio,
          uint64_t seq,
