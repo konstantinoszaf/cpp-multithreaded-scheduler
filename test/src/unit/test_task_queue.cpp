@@ -15,7 +15,7 @@ TEST(OrderedQueue, TestEmptyQueue) {
 TEST(OrderedQueue, InsertTaskToQueue) {
     OrderedQueue<Task, std::less<Task>> q;
     Task t;
-    q.push(t);
+    q.push(std::move(t));
     EXPECT_FALSE(q.empty());
     EXPECT_EQ(q.size(), 1);
 }
@@ -34,7 +34,7 @@ TEST(OrderedQueue, InsertArecurringTask) {
         false //recurring
     };
 
-    q.push(t);
+    q.push(std::move(t));
 
     std::optional<Task> rsp = q.try_pop();
 
@@ -93,13 +93,13 @@ TEST(OrderedQueue, TestQueueShorting) {
     };
 
     EXPECT_EQ(q.size(), 0);
-    q.push(t1);
+    q.push(std::move(t1));
     EXPECT_EQ(q.size(), 1);
-    q.push(t2);
+    q.push((std::move(t2)));
     EXPECT_EQ(q.size(), 2);
-    q.push(t3);
+    q.push(std::move(t3));
     EXPECT_EQ(q.size(), 3);
-    q.push(t4);
+    q.push(std::move(t4));
     EXPECT_EQ(q.size(), 4);
 
     Task res1;
