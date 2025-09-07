@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <memory>
 
 namespace scheduler::detail {
 
@@ -26,7 +27,7 @@ private:
 
     std::vector<std::thread> threads;
     scheduler::queue::OrderedQueue<Task, std::less<Task>> scheduled;
-    std::vector<scheduler::queue::UnorderedQueue<Task>> ready_queues;
+    std::vector<std::unique_ptr<scheduler::queue::UnorderedQueue<Task>>> ready_queues;
     std::mutex queue_mutex;
     std::condition_variable cv;
     std::atomic<bool> running;
