@@ -51,6 +51,12 @@ struct Task {
         return sequence_number > other.sequence_number;
     }
 
+    bool operator>(Task const& other) const {
+        if (priority != other.priority)
+            return priority > other.priority;
+        return sequence_number < other.sequence_number;
+    }
+
     void operator()() const {
         try {
             job();

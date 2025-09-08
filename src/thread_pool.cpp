@@ -54,8 +54,9 @@ void ThreadPool::stop() {
 void ThreadPool::promote_tasks() {
     while (running.load(std::memory_order_acquire) || !scheduled.empty()) {
         auto job = scheduled.wait_and_pop();
-        const size_t i = job.sequence_number % thread_num;
-        ready_queues[i]->push(std::move(job));
+        if (!job.has_value()) [[unlikely]] continue;
+        const size_t i = job->sequence_number % thread_num;
+        ready_queues[i]->push(std::move(job.value()));
     }
 }
 
@@ -75,10 +76,18 @@ bool ThreadPool::submit(Task&& task) {
 void ThreadPool::workerLoop(size_t index) {
     Task t;
     auto& ready = *ready_queues[index];
+    thread_local std::vector<Task> batch;
+    batch.reserve(256);
+
     while (running.load(std::memory_order_acquire) || !ready.empty()) {
         if (auto j = ready.wait_and_pop()) {
-            size_t n = 0;
-            do { (*j)(); ++n; } while (n < 128 && (j = ready.try_pop()));
+            batch.clear();
+            batch.emplace_back(std::move(*j));
+
+            ready.try_pop_batch(191, batch);
+            std::sort(batch.begin(), batch.end(), std::greater<Task>{});
+
+            for (auto& bt : batch) bt();
         }
     }
 }

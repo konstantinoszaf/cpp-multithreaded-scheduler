@@ -77,6 +77,18 @@ public:
         return res;
     }
 
+    bool try_pop_batch(size_t n, std::vector<T>& out) {
+        std::lock_guard<std::mutex> lk(mtx);
+
+        if (queue.empty()) return false;
+        n = std::min(n, queue.size());
+        for (size_t i = 0; i < n; ++i) {
+            out.emplace_back(std::move(queue.front()));
+            queue.pop();
+        }
+        return true;
+    }
+
     bool empty() const {
         std::lock_guard<std::mutex> lk(mtx);
         return queue.empty();
