@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <memory>
+#include <random>
 
 namespace scheduler::detail {
 
@@ -24,6 +25,7 @@ public:
 private:
     void workerLoop(size_t index);
     void promote_tasks();
+    bool steal_some(size_t index, std::vector<Task>& out);
 
     std::vector<std::thread> threads;
     scheduler::queue::OrderedQueue<Task, std::less<Task>> scheduled;
