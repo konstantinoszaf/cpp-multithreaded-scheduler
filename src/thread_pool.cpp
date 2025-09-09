@@ -54,8 +54,9 @@ void ThreadPool::stop() {
 void ThreadPool::promote_tasks() {
     while (running.load(std::memory_order_acquire) || !scheduled.empty()) {
         auto job = scheduled.wait_and_pop();
-        const size_t i = job.sequence_number % thread_num;
-        ready_queues[i]->push(std::move(job));
+        if (!job.has_value()) [[unlikely]] continue;
+        const size_t i = job->sequence_number % thread_num;
+        ready_queues[i]->push(std::move(job.value()));
     }
 }
 
@@ -72,14 +73,58 @@ bool ThreadPool::submit(Task&& task) {
     return true;
 }
 
+bool ThreadPool::steal_some(size_t index, std::vector<Task>& out) {
+    if (thread_num <= 1) return false;
+
+    thread_local std::uniform_int_distribution<size_t> dist;
+    thread_local bool dist_inited = false;
+    if (!dist_inited) {
+        dist.param(decltype(dist)::param_type{0, thread_num - 2});
+        dist_inited = true;
+    }
+
+    thread_local std::mt19937_64 rng = []{
+        std::random_device rd;
+        std::seed_seq ss{ rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+        return std::mt19937_64{ss};
+    }();
+
+    auto pick = [&] {
+        size_t r = dist(rng);
+        return (r >= index) ? r + 1 : r;
+    };
+
+    const int probes = std::min<size_t>(2 * std::log2(thread_num) + 1, 8);
+    for (int i = 0; i < probes; ++i) {
+        size_t victim = pick();
+        if (ready_queues[victim]->try_steal_batch(8, out)) return true;
+    }
+
+    return false;
+}
+
 void ThreadPool::workerLoop(size_t index) {
     Task t;
     auto& ready = *ready_queues[index];
+    thread_local std::vector<Task> batch;
+    batch.reserve(256);
+
     while (running.load(std::memory_order_acquire) || !ready.empty()) {
-        if (auto j = ready.wait_and_pop()) {
-            size_t n = 0;
-            do { (*j)(); ++n; } while (n < 128 && (j = ready.try_pop()));
+        batch.clear();
+
+        if (ready.try_pop_batch(64, batch)) {
+            std::sort(batch.begin(), batch.end(), std::greater<Task>{});
+
+            for (auto& bt : batch) bt();
+            continue;
         }
+
+        if (steal_some(index, batch)) {
+            for (auto& bt : batch) bt();
+            continue;
+        }
+
+        if (auto j = ready.wait_and_pop_for(std::chrono::microseconds{2})) if (j.has_value()) j->operator()();
     }
 }
 

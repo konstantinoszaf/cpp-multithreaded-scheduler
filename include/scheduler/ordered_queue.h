@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <optional>
 
 namespace scheduler::queue {
 
@@ -40,7 +41,7 @@ public:
         while (true) {
             std::unique_lock<std::mutex> lk(mtx);
             if (heap.empty() && shutdown_) return;
-    
+
             if (heap.empty()) {
                 data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
                 continue;
@@ -64,10 +65,10 @@ public:
         return;
     }
 
-    T wait_and_pop() {
+    std::optional<T> wait_and_pop() {
         while (true) {
             std::unique_lock<std::mutex> lk(mtx);
-            if (heap.empty() && shutdown_) return {};
+            if (heap.empty() && shutdown_) return std::nullopt;
     
             if (heap.empty()) {
                 data_cond.wait(lk, [this] { return !heap.empty() || shutdown_; });
@@ -85,12 +86,12 @@ public:
             }
 
             std::pop_heap(heap.begin(), heap.end(), cmp);
-            auto res {std::move(heap.back())};
+            std::optional<T> res{std::in_place, std::move(heap.back())};
             heap.pop_back();
             return res;
         }
 
-        return {};
+        return std::nullopt;
     }
 
     bool try_pop(T& value) {
@@ -119,7 +120,7 @@ public:
         if (next.scheduled_at > now) return std::nullopt;
 
         std::pop_heap(heap.begin(), heap.end(), cmp);
-        auto res {std::move(heap.back())};
+        std::optional<T> res{std::in_place, std::move(heap.back())};
         heap.pop_back();
 
         return res;
