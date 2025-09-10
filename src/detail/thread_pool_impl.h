@@ -1,14 +1,13 @@
+#pragma once
 #include "detail/thread_pool.h"
-#include "scheduler/ordered_queue.h"
-#include "scheduler/unordered_queue.h"
 #include <thread>
-#include <vector>
 #include <queue>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
 #include <memory>
-#include <random>
+#include "scheduler/ordered_queue.h"
+#include "scheduler/unordered_queue.h"
 
 namespace scheduler::detail {
 
