@@ -1,5 +1,6 @@
 #include "detail/thread_pool_impl.h"
 #include "detail/task.h"
+#include <random>
 
 using namespace scheduler::detail;
 

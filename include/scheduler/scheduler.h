@@ -7,6 +7,7 @@
 #include <memory>
 #include <atomic>
 #include <condition_variable>
+#include "scheduler_interface.h"
 
 namespace scheduler {
 
@@ -17,9 +18,8 @@ namespace detail {
     struct Task;
 }
 
-class Scheduler {
+class Scheduler : public IScheduler {
 public:
-    // Constructor/Destructor
     explicit Scheduler(size_t numThreads =
                        std::thread::hardware_concurrency());
     ~Scheduler(); // joins and cleans up threads
@@ -27,20 +27,19 @@ public:
     // Scheduling tasks
     // Schedules a task with a specific priority
     // and an optional deadline
-    // (e.g., a time_point from std::chrono).
     void schedule(std::function<void()> task, int priority,
       std::optional<std::chrono::steady_clock::time_point> deadline =
-                                                       std::nullopt);
+                                                       std::nullopt) override;
 
     // Allow tasks that run repeatedly on an interval
     void scheduleRecurring(std::function<void()> task, int priority,
-                           std::chrono::milliseconds interval);
+                           std::chrono::milliseconds interval) override;
 
     // Performance metrics
     // Returns average, min, max latency so far
-    std::tuple<double, double, double> getLatencyStatistics() const;
-    std::tuple<double, double, double> getPvalueStatistics() const;
-    uint64_t getMissedTasks();
+    std::tuple<double, double, double> getLatencyStatistics() const override;
+    std::tuple<double, double, double> getPvalueStatistics() const override;
+    uint64_t getMissedTasks() override;
 
     // Implementation details
 protected:

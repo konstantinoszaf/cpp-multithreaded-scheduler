@@ -2,7 +2,6 @@
 #include <gmock/gmock.h>
 #include "scheduler/scheduler.h"
 #include "mock_statistics_calculator.h"
-#include "mock_task_queue.h"
 #include "mock_thread_pool.h"
 #include "detail/task.h"
 
@@ -19,7 +18,6 @@ public:
     // Inherit default constructor
     using Scheduler::Scheduler;
     using Scheduler::calculatePriority;
-
 };
 
 class TestScheduler : public ::testing::Test {
@@ -40,6 +38,9 @@ protected:
         // Default behaviors
         ON_CALL(*mockThreadPool, submit(testing::_)).WillByDefault(testing::Return(true));
         ON_CALL(*mockStats, getLatencyStatistics()).WillByDefault(testing::Return(std::make_tuple(0.0,0.0,0.0)));
+
+        EXPECT_CALL(*mockThreadPool, stop).Times(::testing::AtLeast(0));
+        EXPECT_CALL(*mockStats, flushThreadLocal).Times(::testing::AtLeast(0));
 
         sched = std::make_unique<TestableScheduler>(
             std::move(mockThreadPool),
