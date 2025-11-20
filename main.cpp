@@ -11,8 +11,10 @@ using steady_clock = std::chrono::steady_clock;
 
 int main() {
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
+    spdlog::info("Starting benchmark with {} worker threads", threads);
     scheduler::Scheduler scheduler{threads};
 
+    // scheduler.scheduleRecurring([](){}, 10, std::chrono::milliseconds(100));
     // Benchmark parameters
     const int producers = 8;
     const int tasks_per_producer = 200'000;

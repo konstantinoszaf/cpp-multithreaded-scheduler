@@ -1,7 +1,7 @@
 LOCAL_DIR := /usr/local/
 BUILD_DIR := build
 
-.PHONY: all build install build-tests run-tests test clean sanity
+.PHONY: all build build-main build-profiling run-main install build-tests run-tests test clean sanity
 
 all: build
 
@@ -15,6 +15,13 @@ build-main:
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && \
 	    cmake -DBUILD_TESTS=OFF -DBUILD_EXAMPLE=ON -DCMAKE_BUILD_TYPE=Release .. && \
+	    cmake --build . --target main -- -j
+
+build-profiling:
+	@mkdir -p $(BUILD_DIR)
+	@cd $(BUILD_DIR) && \
+	    cmake -DBUILD_TESTS=OFF -DBUILD_EXAMPLE=ON -DCMAKE_BUILD_TYPE=Profiling \
+			-DCMAKE_CXX_FLAGS_PROFILING="-O3 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls" .. && \
 	    cmake --build . --target main -- -j
 
 run-main:
@@ -43,6 +50,6 @@ run-tests:
 test: build-tests run-tests
 
 clean:
-	-@rm -rf $(BUILD_DIR)
-	-@rm *.out
-	-@rm perf.*
+	@$(RM) -r -- $(BUILD_DIR)
+	@$(RM) -f -- *.out
+	@$(RM) -f -- perf.*
