@@ -2,7 +2,7 @@
 #include <memory>
 #include <mutex>
 #include <condition_variable>
-#include <queue>
+#include "scheduler/ring_buffer.h"
 
 namespace scheduler::queue {
 
@@ -10,12 +10,12 @@ template<typename T>
 class UnorderedQueue {
 private:
     mutable std::mutex mtx;
-    std::deque<T> queue;
+    RingBuffer<T> queue;
     std::condition_variable data_cond;
     bool shutdown_;
     std::atomic<int> approx_size;
 public:
-    UnorderedQueue() : shutdown_{false}, approx_size{0} {};
+    UnorderedQueue() : queue{100'000}, shutdown_{false}, approx_size{0} {};
 
     UnorderedQueue(UnorderedQueue const& other) {
         std::lock_guard<std::mutex> lk(other.mtx);
@@ -23,14 +23,21 @@ public:
         shutdown_ = other.shutdown_;
     }
 
-    void push(T&& t) {
+    bool push(T&& t) {
+        bool res = false;
         {
             std::lock_guard<std::mutex> lk(mtx);
-            if (shutdown_) return;
-            queue.emplace_back(std::move(t));
+            if (shutdown_) return false;
+            
+            res = queue.push_back(std::move(t));
         }
-        approx_size.fetch_add(1, std::memory_order_relaxed);
-        data_cond.notify_one();
+
+        if (res) {
+            approx_size.fetch_add(1, std::memory_order_relaxed);
+            data_cond.notify_one();
+        }
+
+        return res;
     }
 
     bool wait_and_pop(T& value) {
@@ -112,16 +119,19 @@ public:
     }
 
     bool try_steal_batch(size_t n, std::vector<T>& out) {
-        if (approx_size.load(std::memory_order_relaxed) <= 1) return false;
+        if (approx_size.load(std::memory_order_relaxed) <= 8) return false;
 
         if (!mtx.try_lock()) return false;
-        std::lock_guard<std::mutex> lk(mtx, std::adopt_lock);
+        {
+            std::lock_guard<std::mutex> lk(mtx, std::adopt_lock);
 
-        if (queue.empty()) return false;
-        n = std::min(n, queue.size() / 2);
-        for (size_t i = 0; i < n; ++i) {
-            out.emplace_back(std::move(queue.back()));
-            queue.pop_back();
+            if (queue.empty()) return false;
+            n = std::min(n, queue.size() / 2);
+            if (n == 0) return false;
+            for (size_t i = 0; i < n; ++i) {
+                out.emplace_back(std::move(queue.back()));
+                queue.pop_back();
+            }
         }
 
         int prev = approx_size.fetch_sub((int)n, std::memory_order_relaxed);
