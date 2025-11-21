@@ -70,8 +70,8 @@ bool ThreadPool::submit(Task&& task) {
     }
 
     const size_t i = task.sequence_number % thread_num;
-    ready_queues[i]->push(std::move(task));
-    return true;
+    
+    return ready_queues[i]->push(std::move(task));
 }
 
 bool ThreadPool::steal_some(size_t index, std::vector<Task>& out) {
@@ -105,7 +105,6 @@ bool ThreadPool::steal_some(size_t index, std::vector<Task>& out) {
 }
 
 void ThreadPool::workerLoop(size_t index) {
-    Task t;
     auto& ready = *ready_queues[index];
     thread_local std::vector<Task> batch;
     batch.reserve(256);
