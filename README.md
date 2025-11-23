@@ -1,6 +1,6 @@
-# C++ multi-threaded Task Scheduler
+# C++ multi-threaded Task Scheduler (In progress)
 Multi-Threaded Task Scheduling.
-The scheduler sustains ~**2M tasks/s** with **microsecond-class latency** and **near-zero deadline misses** for 1 ms deadlines.
+The scheduler sustains ~**3.5M tasks/s**. Replacing std::deque with a ring buffer implemented on top of std::vector significantly improved througput due to better cache locality. However, this change also caused heavier latency tails, revealing queuing bottlenecks and load imbalance in the current design.
 
 A multi-threaded task scheduler with support for:
 
@@ -26,28 +26,8 @@ A multi-threaded task scheduler with support for:
 
 ---
 
-## Representative Results
-
-| Configuration | Submit Throughput | Overall Throughput | Drain Throughput | Latency avg | p95 | p99 | Missed Deadlines |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **First take** (naïve, blocking; no stealing) | **1,078,643** tasks/s | **146,318** tasks/s | **161,132** tasks/s | **5.06 s** | 8.76 s | 9.19 s | **1,599,840 / 1,600,000** |
-| **Final take** (work stealing, light batching) | **1,949,440** tasks/s | **1,949,170** tasks/s | **∞** | **9.27 µs** | 43.9 µs | 139 µs | **20 / 1,600,000** |
-
-> In the optimized run, **remaining=0** at the end of submission, so **drain throughput = ∞** (workers kept pace with producers).
-
----
-
-## Design Evolution
-
-**Initial design.** The scheduler owned two internal threads, one for *ready* tasks and one for *scheduled* (time-delayed) tasks, each with its own mutex-guarded queue. When a ready task was popped, it was pushed into the thread pool’s shared priority queue (also mutex-protected). This introduced multiple hand-offs and lock contention (two internal queues + a hot-path shared priority queue), which the benchmarks showed to be inefficient.
-
-**Optimized design.** The scheduler now acts as a pass-through: tasks go directly to **per-worker run queues**. A single ordered queue is retained for *recurring/time-delayed* tasks, which are promoted into worker queues at their due time. Workers pull in small batches, **steal work** when idle, and the shared priority queue is removed from the hot path—greatly reducing contention and queueing delay.
-
-**Result.** In the synthetic benchmark, the optimized scheduler sustains ~**2M tasks/s** with **microsecond-class latency** and **near-zero deadline misses** for 1 ms deadlines.
-
----
-
-## Sample Driver Output (Optimized)
+## Sample Driver Output (std::deque implementation, which had a more stable tail)
+```
 [2025-09-09 16:39:45.976] [info] === Throughput ===
 [2025-09-09 16:39:45.976] [info] Submit throughput:     1949440 tasks/s (1600000 tasks in 0.821s)
 [2025-09-09 16:39:45.976] [info] Overall throughput:    1949170 tasks/s (1600000 tasks in 0.821s)
@@ -56,7 +36,7 @@ A multi-threaded task scheduler with support for:
 [2025-09-09 16:39:46.040] [info] avg=9271.144573125 ns  min=95 ns  max=8561494 ns
 [2025-09-09 16:39:46.040] [info] p95=43898 ns  p99=139389 ns  p999=395650 ns
 [2025-09-09 16:39:46.040] [info] missed deadlines: 20 / 1600000
-
+```
 ---
 
 ## Benchmark Methodology
